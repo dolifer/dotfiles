@@ -1,0 +1,47 @@
+# Use custom format
+format = "$all"
+
+# Disable the newline at the start of the prompt
+add_newline = false
+
+[character]
+success_symbol = "[➜](bold green) "
+error_symbol = "[✗](bold red) "
+
+[hostname]
+ssh_only = false
+format =  "@ [$hostname]($style) "
+trim_at = ".companyname.com"
+disabled = false
+
+[username]
+style_user = "gray bold"
+style_root = "bold red"
+format = "[$user]($style) "
+disabled = false
+show_always = true
+
+[time]
+disabled = false
+format = '[\[$time\]](bold yellow) '
+time_format = "%T"
+utc_time_offset = "+3"
+
+[git_status]
+ahead = "⇡${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+behind = "⇣${count}"
+
+[docker_context]
+format = "via [🐋 $context](blue bold)"
+
+[cmd_duration]
+min_time = 200
+format = "took [$duration](bold yellow)"
+
+[kubernetes]
+format = 'via [☸ $context](cyan bold)[( \[$namespace\])](dimmed green) in '
+disabled = false
+
+[kubernetes.context_aliases]
+"dev.local.cluster.k8s" = "dev"
