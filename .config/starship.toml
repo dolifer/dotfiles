@@ -32,7 +32,8 @@ $character"""
 disabled = false
 
 [directory]
-format=" [$path](#FFCF3C) [$read_only]($read_only_style)"
+truncation_symbol = "…/"
+format="[$path](#FFCF3C) [$read_only]($read_only_style)"
 
 [character]
 success_symbol = "[╰╴](#D7E8BA)[λ](bold green)"
