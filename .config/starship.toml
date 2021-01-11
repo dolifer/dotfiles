@@ -9,17 +9,17 @@ success_symbol = "[➜](bold green) "
 error_symbol = "[✗](bold red) "
 
 [hostname]
-ssh_only = false
-format =  "@ [$hostname]($style) "
+ssh_only = true
+format =  "@[$hostname]($style) "
 trim_at = ".companyname.com"
 disabled = false
 
 [username]
-style_user = "gray bold"
-style_root = "bold red"
+style_user = "gray"
+style_root = "red bold"
 format = "[$user]($style) "
 disabled = false
-show_always = true
+show_always = false
 
 [time]
 disabled = false
@@ -40,7 +40,7 @@ min_time = 200
 format = "took [$duration](bold yellow)"
 
 [kubernetes]
-format = 'via [☸ $context](cyan bold)[( \[$namespace\])](dimmed green) in '
+format = 'via [☸ $context](cyan bold) [(\($namespace\))](dimmed green) '
 disabled = false
 
 [kubernetes.context_aliases]
