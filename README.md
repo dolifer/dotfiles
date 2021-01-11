@@ -62,3 +62,13 @@ mkdir -p ~/.config && touch ~/.config/starship.toml
 ```
 
 After that replace the content with [my version](/.config/starship.toml) or [build your own](https://starship.rs/config/) :)
+
+# `kubectx` + `kubens`: Power tools for kubectl
+
+[kubectx]( https://github.com/ahmetb/kubectx ) repository provides both `kubectx` and `kubens` tools.
+
+**`kubectx`** helps you switch between clusters back and forth:
+![kubectx demo GIF]( https://github.com/ahmetb/kubectx/blob/master/img/kubectx-demo.gif)
+
+**`kubens`** helps you switch between Kubernetes namespaces smoothly:
+![kubens demo GIF]( https://github.com/ahmetb/kubectx/blob/master/img/kubens-demo.gif)
