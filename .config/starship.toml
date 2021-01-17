@@ -58,7 +58,7 @@ diverged = "⇕⇡${ahead_count}⇣${behind_count}"
 behind = "⇣${count}"
 
 [docker_context]
-format = 'via 🐋 [(\($context\))](fg:27 bold) '
+format = 'via 🐋 [(\($context\))](fg:27 bold)'
 disabled = false
 only_with_files = true
 
@@ -67,5 +67,5 @@ min_time = 200
 format = "took [$duration](bold yellow)"
 
 [kubernetes]
-format = 'via [☸ $context](bold fg:27) [(\($namespace\))](bold fg:33) '
+format = 'via [☸ $context](bold fg:27) [(\($namespace\))](bold fg:33)'
 disabled = false
