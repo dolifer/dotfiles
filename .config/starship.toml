@@ -9,12 +9,10 @@ $git_branch\
 $git_commit\
 $git_state\
 $git_status\
-$hg_branch\
 $package\
 $dotnet\
 $helm\
 $nodejs\
-$terraform\
 $aws\
 $env_var\
 $custom\
@@ -27,13 +25,12 @@ $time\
 $status\
 $character"""
 
-# makes prompt a single line
 [line_break]
 disabled = false
 
 [directory]
 truncation_symbol = "…/"
-format="[$path](#FFCF3C) [$read_only]($read_only_style)"
+format="[$path](#FFCF3C) [$read_only]($read_only_style) "
 
 [character]
 success_symbol = "[╰╴](#D7E8BA)[λ](bold green)"
@@ -54,11 +51,11 @@ show_always = false
 
 [git_status]
 ahead = "⇡${count}"
-diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count} "
 behind = "⇣${count}"
 
 [docker_context]
-format = 'via 🐋 [(\($context\))](fg:27 bold)'
+format = 'via 🐳 [(\($context\))](fg:27 bold)'
 disabled = false
 only_with_files = true
 
@@ -67,5 +64,5 @@ min_time = 200
 format = "took [$duration](bold yellow)"
 
 [kubernetes]
-format = 'via [☸ $context](bold fg:27) [(\($namespace\))](bold fg:33)'
+format = 'via ☸ [$context](bold fg:27) [(\($namespace\))](bold fg:33)'
 disabled = false

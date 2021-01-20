@@ -18,8 +18,10 @@ echo -e "Will import config files from \033[0;32m$SCRIPT_PATH\033[0m folder"
 # zsh
 yes | cp -f "$SCRIPT_PATH/.zshrc" ~/.zshrc
 
+yes | cp -fr "$SCRIPT_PATH/.zsh" ~/
+
 # starship
-mkdir -p  ~/.config
+mkdir -p ~/.config && touch ~/.config/starship.toml
 yes | cp -f "$SCRIPT_PATH/.config/starship.toml" ~/.config/starship.toml
 
 echo -e "Done."
