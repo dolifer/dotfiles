@@ -49,7 +49,14 @@ Add the following to the end of `Microsoft.PowerShell_profile.ps1`.
 You can check the location of this file by querying the `$PROFILE` variable in PowerShell. 
 Typically the path is `~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` or `~/.config/powershell/Microsoft.PowerShell_profile.ps1` on -Nix.
 
+```poweshell
+# WARNING: this will replace your Powershell profile
+Set-Content -Value 'Invoke-Expression (&starship init powershell)' -Path $PROFILE
 ```
+
+or manually edit the file with your favourite text editor and add this line to the end of file
+
+```poweshell
 Invoke-Expression (&starship init powershell)
 ```
 
@@ -57,8 +64,14 @@ Invoke-Expression (&starship init powershell)
 
 To get started configuring starship, create the following file: `~/.config/starship.toml`
 
+-Nix
 ```
 mkdir -p ~/.config && touch ~/.config/starship.toml
+```
+
+-Windows
+```
+New-Item -Type File -Path ~/.config/starship.toml -Force
 ```
 
 After that replace the content with [my version](/.config/starship.toml) or [build your own](https://starship.rs/config/) :)
