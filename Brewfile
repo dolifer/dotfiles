@@ -25,6 +25,9 @@ cask "gpg-suite"
 cask "ghostty"
 cask "zed"
 
+# k8s
+cask "freelens"
+
 # Quick Look plugins
 cask "qlcolorcode" # https://github.com/anthonygelibert/QLColorCode
 cask "qlstephen" # https://github.com/whomwah/qlstephen
