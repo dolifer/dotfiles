@@ -1,0 +1,24 @@
+[include]
+	path = ~/.gitlocal
+
+[color]
+	ui = auto
+
+[color "diff"]
+	meta = white bold
+	frag = cyan bold
+	old = red bold
+	new = green bold
+
+[init]
+	defaultBranch = main
+
+[push]
+	default = current
+	autoSetupRemote = true
+
+[pull]
+	rebase = true
+
+[rerere]
+	enabled = true
