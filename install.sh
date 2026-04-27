@@ -21,6 +21,7 @@ skip()    { echo -e "  ${DIM}⏭️  ${*}${RESET}"; }
 warn()    { echo -e "  ${YELLOW}⚠️ ${RESET} ${*}"; }
 fail()    { echo -e "  ${RED}❌${RESET} ${*}"; }
 info()    { echo -e "  ${CYAN}💡${RESET} ${*}"; }
+indent()  { sed 's/^/  /' ; }
 
 # --- Progress ---
 TOTAL_STEPS=6
@@ -122,7 +123,7 @@ install_software() {
   fi
 
   if _exists brew; then
-    brew bundle --file="$DOTFILES/Brewfile" --no-lock 2>&1 | grep -E '^(Installing|Upgrading|Using)' || true
+    brew bundle --file="$DOTFILES/Brewfile" --no-lock 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
     ok "Brew bundle complete"
     track "📦" "Packages — synced"
   else
@@ -134,7 +135,7 @@ install_software() {
 # --- Zinit ---
 install_zinit() {
   step "⚡ Zinit"
-  bash "$DOTFILES/scripts/zinit.sh"
+  bash "$DOTFILES/scripts/zinit.sh" 2>&1 | indent
   ok "Ready"
   track "⚡" "Zinit — ready"
 }
@@ -241,7 +242,7 @@ setup_macos() {
   fi
 
   step "🍎 macOS defaults"
-  bash "$DOTFILES/scripts/macos.sh" 2>/dev/null
+  bash "$DOTFILES/scripts/macos.sh" 2>/dev/null | indent
   ok "Applied"
   track "🍎" "macOS defaults — applied"
 }
