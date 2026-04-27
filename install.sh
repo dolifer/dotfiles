@@ -139,10 +139,67 @@ install_zinit() {
   track "⚡" "Zinit — ready"
 }
 
+# --- SSH config (merge, don't overwrite) ---
+sync_ssh_config() {
+  local src="$DOTFILES/.ssh/config"
+  local dest="$HOME/.ssh/config"
+  mkdir -p "$HOME/.ssh"
+  chmod 700 "$HOME/.ssh"
+
+  if [[ ! -f "$dest" ]]; then
+    cp "$src" "$dest"
+    chmod 600 "$dest"
+    ok "ssh/config ${DIM}(new)${RESET}"
+    return
+  fi
+
+  # Detect key type on this machine
+  local key_file="id_ed25519"
+  if [[ ! -f "$HOME/.ssh/id_ed25519" ]] && [[ -f "$HOME/.ssh/id_rsa" ]]; then
+    key_file="id_rsa"
+  fi
+
+  local changed=false
+
+  # Ensure Host * block has our keys
+  for directive in "AddKeysToAgent yes" "UseKeychain yes" "IdentitiesOnly yes"; do
+    if ! grep -qF "$directive" "$dest"; then
+      # Append to Host * block or create one
+      if grep -q "^Host \*" "$dest"; then
+        sed -i '' "/^Host \*/a\\
+  ${directive}
+" "$dest"
+      else
+        printf '\nHost *\n  %s\n' "$directive" >> "$dest"
+      fi
+      changed=true
+    fi
+  done
+
+  # Ensure Host github.com block exists
+  if ! grep -q "^Host github.com" "$dest"; then
+    cat >> "$dest" <<EOF
+
+Host github.com
+  HostName github.com
+  IdentityFile ~/.ssh/${key_file}
+EOF
+    changed=true
+  fi
+
+  chmod 600 "$dest"
+  if [[ "$changed" == true ]]; then
+    warn "ssh/config ${DIM}(updated — merged missing directives)${RESET}"
+  else
+    ok "ssh/config ${DIM}(unchanged)${RESET}"
+  fi
+}
+
 # --- Config files ---
 sync_configs() {
   step "🔗 Config files"
 
+  sync_ssh_config
   sync_file "$DOTFILES/.zshrc"                "$HOME/.zshrc"
   sync_file "$DOTFILES/.zsh/aliases.zsh"      "$HOME/.zsh/aliases.zsh"
   sync_file "$DOTFILES/.gitconfig"            "$HOME/.gitconfig"
