@@ -215,6 +215,11 @@ sync_configs() {
   fi
   sync_file "$DOTFILES/.config/ghostty/config" "$ghostty_dir/config"
 
+  # GPG agent (pinentry-mac)
+  sync_file "$DOTFILES/.gnupg/gpg-agent.conf" "$HOME/.gnupg/gpg-agent.conf"
+  chmod 700 "$HOME/.gnupg" 2>/dev/null
+  gpgconf --kill gpg-agent 2>/dev/null || true
+
   # k8s prompt helper
   mkdir -p "$HOME/.local/bin"
   cp -f "$DOTFILES/scripts/k8s-prompt.sh" "$HOME/.local/bin/k8s-prompt"
@@ -249,6 +254,19 @@ setup_gitlocal() {
     local name=$(git config --file "$HOME/.gitlocal" user.name 2>/dev/null || echo "")
     local email=$(git config --file "$HOME/.gitlocal" user.email 2>/dev/null || echo "")
     ok "${name} <${email}>"
+
+    # Auto-detect GPG signing key if not set
+    local current_key=$(git config --file "$HOME/.gitlocal" user.signingkey 2>/dev/null || echo "")
+    if [[ -z "$current_key" ]] && _exists gpg; then
+      local gpg_key=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | awk '/^sec/{print $2}' | cut -d/ -f2 | head -1)
+      if [[ -n "$gpg_key" ]]; then
+        git config --file "$HOME/.gitlocal" user.signingkey "$gpg_key"
+        ok "GPG signing key → ${gpg_key}"
+      fi
+    elif [[ -n "$current_key" ]]; then
+      ok "GPG signing key → ${current_key}"
+    fi
+
     track "🔑" "Git identity — ${name}"
     return
   fi
