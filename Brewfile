@@ -15,6 +15,9 @@ brew "eza"
 brew "zoxide"
 brew "fzf"
 brew "pygments"
+brew "jq"
+brew "yq"
+brew "kubectx"
 
 # ------------------------------------------------------------------------------
 # Cask
@@ -22,6 +25,8 @@ brew "pygments"
 cask "gpg-suite"
 cask "ghostty"
 cask "zed"
+cask "bruno"
+cask "fork"
 
 # k8s
 cask "freelens"
