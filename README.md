@@ -4,22 +4,16 @@
 
 Features
 - [🚀 Starship](https://starship.rs) as a prompt
-- Syntax highlighting of commands while they are typed
-- Browser-like substring search for history
-- [zgen](https://github.com/tarjoilija/zgen) for dependency management
-- Useful [aliases](./.zsh/aliases.zsh)
+- [zinit](https://github.com/zdharma-continuum/zinit) plugin manager with turbo mode (~230ms startup)
+- Syntax highlighting, autosuggestions, fzf-tab completion
+- OS-aware ssh-agent (macOS Keychain / Linux ssh-agent plugin)
+- Cached tool inits (starship, zoxide) for fast startup
+- Useful [aliases](./.zsh/aliases.zsh) and project index (`pj` commands)
 
 # Installation
 
-Dotfiles are installed by running one of the following commands in your terminal, just copy one of the following commands and execute in the terminal:
-
 ```sh
-# Clone dotfiles repo
 git clone https://github.com/dolifer/dotfiles.git $HOME/.dotfiles
-
-# Go to the dotfiles directory
 cd $HOME/.dotfiles
-
-# Install dotfiles
 ./install.sh
 ```

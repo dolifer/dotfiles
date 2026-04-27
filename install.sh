@@ -15,30 +15,23 @@ _exists() {
   command -v "$1" > /dev/null 2>&1
 }
 
-# Success reporter
 info() {
   echo -e "${CYAN}${*}${RESET}"
 }
 
-# Error reporter
 error() {
   echo -e "${RED}${*}${RESET}"
 }
 
-# Success reporter
 success() {
   echo -e "${GREEN}${*}${RESET}"
 }
 
-# End section
 finish() {
   success "Done!"
   echo
   sleep 1
 }
-
-# Get Script Source Directory
-# https://stackoverflow.com/questions/59895/getting-the-source-directory-of-a-bash-script-from-within
 
 pushd . > /dev/null
 SCRIPT_PATH="${BASH_SOURCE[0]}"
@@ -64,7 +57,7 @@ install_homebrew() {
     fi
 
     info "Installing Homebrew..."
-    bash -c "$(curl -fsSL ${HOMEBREW_INSTALLER_URL})"
+    bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     eval "$(/opt/homebrew/bin/brew shellenv)"
   else
     success "You already have Homebrew installed. Skipping..."
@@ -80,22 +73,16 @@ install_software() {
 
   info "Installing software..."
 
-  cd "$DOTFILES"
+  cd "$SCRIPT_PATH"
 
-  # Homebrew Bundle
   if _exists brew; then
     brew bundle
   else
     error "Error: Brew is not available"
   fi
 
-  # Homebrew Bundle
-  if ! _exists zgen; then
-      info "Installing zgen..."
-      eval "$SCRIPT_PATH/scripts/zgen.sh"
-  else
-    error "Error: zgen is not available"
-  fi
+  info "Installing zinit..."
+  bash "$SCRIPT_PATH/scripts/zinit.sh"
 
   cd -
 
@@ -105,13 +92,14 @@ install_software() {
 # zsh
 yes | cp -f "$SCRIPT_PATH/.zshrc" ~/.zshrc
 
-yes | cp -fr "$SCRIPT_PATH/.zsh" ~/
+# aliases
+mkdir -p ~/.zsh
+yes | cp -f "$SCRIPT_PATH/.zsh/aliases.zsh" ~/.zsh/aliases.zsh
 
 # starship
-mkdir -p ~/.config && touch ~/.config/starship.toml
+mkdir -p ~/.config
 yes | cp -f "$SCRIPT_PATH/.config/starship.toml" ~/.config/starship.toml
 
-# Homebrew Bundle
 main() {
     install_homebrew "$*"
     install_software "$*"
