@@ -16,8 +16,16 @@ echo "Applying macOS defaults..."
 # General UI/UX
 # ==============================================================================
 
-# Disable the sound effects on boot
-sudo nvram SystemAudioVolume=" "
+# Disable the sound effects on boot (requires sudo to write)
+current_vol="$(nvram SystemAudioVolume 2>/dev/null | cut -f2)"
+if [[ "$current_vol" == " " ]]; then
+  echo "  ✅ Boot sound already muted"
+elif sudo -n true 2>/dev/null; then
+  sudo nvram SystemAudioVolume=" "
+  echo "  ✅ Boot sound muted"
+else
+  echo "  ⏭️  Skipping boot sound (needs sudo)"
+fi
 
 # Always show scrollbars
 defaults write NSGlobalDomain AppleShowScrollBars -string "Always"
