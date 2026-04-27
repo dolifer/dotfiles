@@ -254,6 +254,37 @@ pj-list() {
   awk -F'\t' -v home="$HOME" '{ gsub(home "/projects", "~/projects", $2); gsub(/^git@[^:]+:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "—") }' "$PJ_INDEX_FILE"
 }
 
+# --- Cleanup stale branches across all projects ---
+# Removes local branches whose tracked remote branch no longer exists.
+# Keeps local-only branches (no upstream set).
+pj-clean() {
+  local total=0
+  for dir in "${HOME}/projects"/*(N/); do
+    [[ ! -d "${dir}/.git" ]] && continue
+    local name="${dir##*/}"
+
+    # Prune remote tracking refs
+    git -C "$dir" fetch --prune --quiet 2>/dev/null || continue
+
+    # Find branches with a gone upstream
+    local -a gone
+    gone=(${(f)"$(git -C "$dir" for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ 2>/dev/null | awk '/\[gone\]/{print $1}')"})
+
+    [[ ${#gone[@]} -eq 0 ]] && continue
+
+    echo "📂 $name"
+    for b in "${gone[@]}"; do
+      git -C "$dir" branch -D "$b" 2>/dev/null && echo "  🗑️  $b" && ((total++))
+    done
+  done
+
+  if [[ $total -eq 0 ]]; then
+    echo "✅ All clean — no stale branches found"
+  else
+    echo "🧹 Removed $total stale branch(es)"
+  fi
+}
+
 # --- Completions ---
 _pj_link_complete() {
   if [[ -f "$PJ_INDEX_FILE" ]]; then
