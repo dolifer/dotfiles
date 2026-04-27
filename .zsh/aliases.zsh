@@ -258,9 +258,9 @@ _pj_unlink_complete() {
   compadd -a worktrees
 }
 
-compdef _pj_link_complete pj-link
-compdef _pj_link_complete pj
-compdef _pj_unlink_complete pj-unlink
+compdef _pj_link_complete pj-link 2>/dev/null
+compdef _pj_link_complete pj 2>/dev/null
+compdef _pj_unlink_complete pj-unlink 2>/dev/null
 
 # cd with zsh-z capabilities (must be after function definitions)
 # https://github.com/ajeetdsouza/zoxide

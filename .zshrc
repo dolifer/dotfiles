@@ -46,8 +46,9 @@ zinit wait lucid blockf for \
 zinit wait lucid for \
   Aloxaf/fzf-tab
 
-# Autosuggestions loaded synchronously (some tools hook into it at init time)
-zinit light zsh-users/zsh-autosuggestions
+# Autosuggestions (turbo — sync load causes doubled keystrokes in sudo/SSH shells)
+zinit wait lucid for \
+  zsh-users/zsh-autosuggestions
 
 zinit wait lucid for \
   hlissner/zsh-autopair \
@@ -56,9 +57,9 @@ zinit wait lucid for \
 # --- Completions (single compinit, cached) ---
 autoload -Uz compinit
 if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
-  compinit
+  compinit -u
 else
-  compinit -C
+  compinit -u -C
 fi
 zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 
