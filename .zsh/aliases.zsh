@@ -153,6 +153,17 @@ pj-link() {
   # Fetch the branch if not available locally
   git -C "$repo_path" fetch origin "$branch" 2>/dev/null
 
+  # If branch is already checked out in another worktree, create a new branch
+  # named after the current directory, based on the target branch
+  local worktree_branch="$branch"
+  if git -C "$repo_path" worktree list 2>/dev/null | grep -q "\[$branch\]"; then
+    worktree_branch="$(basename "$PWD")"
+    echo "Branch '$branch' in use — creating '$worktree_branch' from 'origin/$branch'"
+    git -C "$repo_path" worktree add -b "$worktree_branch" "$dest" "origin/$branch" 2>&1 && \
+      echo "Worktree: $project → $dest (branch: $worktree_branch ← origin/$branch)"
+    return
+  fi
+
   git -C "$repo_path" worktree add "$dest" "$branch" 2>&1 && \
     echo "Worktree: $project → $dest (branch: $branch)"
 }
