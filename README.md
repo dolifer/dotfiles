@@ -9,8 +9,25 @@ Features
 - OS-aware ssh-agent (macOS Keychain / Linux ssh-agent plugin)
 - Cached tool inits (starship, zoxide) for fast startup
 - Useful [aliases](./.zsh/aliases.zsh) and project index (`pj` commands)
+- Ghostty and Zed editor configs
 
-# Installation
+## Quick bootstrap (fresh machine)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dolifer/dotfiles/main/bootstrap.sh | bash
+```
+
+This will install Xcode CLT (if needed), clone the repo, install Homebrew + packages, set up zinit, and sync all configs.
+
+## Update
+
+```sh
+update
+```
+
+Pulls latest dotfiles, discards local changes, and re-syncs everything.
+
+## Manual install
 
 ```sh
 git clone https://github.com/dolifer/dotfiles.git $HOME/.dotfiles

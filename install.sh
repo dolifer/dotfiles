@@ -1,108 +1,245 @@
 #!/usr/bin/env bash
-
-set -e
-trap on_error SIGTERM
+set -euo pipefail
 
 e='\033'
 RESET="${e}[0m"
 BOLD="${e}[1m"
+DIM="${e}[2m"
 CYAN="${e}[0;96m"
 RED="${e}[0;91m"
-YELLOW="${e}[0;93m"
 GREEN="${e}[0;92m"
+YELLOW="${e}[0;93m"
+BLUE="${e}[0;94m"
+MAGENTA="${e}[0;95m"
+WHITE="${e}[1;97m"
 
-_exists() {
-  command -v "$1" > /dev/null 2>&1
-}
+_exists() { command -v "$1" > /dev/null 2>&1; }
 
-info() {
-  echo -e "${CYAN}${*}${RESET}"
-}
+# --- Logging ---
+ok()      { echo -e "  ${GREEN}✅${RESET} ${*}"; }
+skip()    { echo -e "  ${DIM}⏭️  ${*}${RESET}"; }
+warn()    { echo -e "  ${YELLOW}⚠️ ${RESET} ${*}"; }
+fail()    { echo -e "  ${RED}❌${RESET} ${*}"; }
+info()    { echo -e "  ${CYAN}💡${RESET} ${*}"; }
 
-error() {
-  echo -e "${RED}${*}${RESET}"
-}
+# --- Progress ---
+TOTAL_STEPS=6
+CURRENT_STEP=0
+RESULTS=()
+START_TIME=$(date +%s)
 
-success() {
-  echo -e "${GREEN}${*}${RESET}"
-}
-
-finish() {
-  success "Done!"
+step() {
+  CURRENT_STEP=$((CURRENT_STEP + 1))
   echo
-  sleep 1
+  echo -e "  ${BLUE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "  ${WHITE}[$CURRENT_STEP/$TOTAL_STEPS]${RESET} ${BOLD}${*}${RESET}"
+  echo -e "  ${BLUE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 }
 
-pushd . > /dev/null
-SCRIPT_PATH="${BASH_SOURCE[0]}"
-if ([ -h "${SCRIPT_PATH}" ]); then
-  while([ -h "${SCRIPT_PATH}" ]); do cd `dirname "$SCRIPT_PATH"`;
-  SCRIPT_PATH=`readlink "${SCRIPT_PATH}"`; done
-fi
-cd `dirname ${SCRIPT_PATH}` > /dev/null
-SCRIPT_PATH=`pwd`;
-popd  > /dev/null
+track() {
+  local emoji="$1" label="$2"
+  RESULTS+=("${emoji} ${label}")
+}
 
-echo -e "Will import config files from \033[0;32m$SCRIPT_PATH\033[0m folder"
+# Resolve script directory
+DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-install_homebrew() {
-  info "Trying to detect installed Homebrew..."
+# --- Header ---
+print_header() {
+  echo
+  echo -e "${MAGENTA}${BOLD}"
+  cat << 'EOF'
+    ██████╗  ██████╗ ████████╗███████╗██╗██╗     ███████╗███████╗
+    ██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██║██║     ██╔════╝██╔════╝
+    ██║  ██║██║   ██║   ██║   █████╗  ██║██║     █████╗  ███████╗
+    ██║  ██║██║   ██║   ██║   ██╔══╝  ██║██║     ██╔══╝  ╚════██║
+    ██████╔╝╚██████╔╝   ██║   ██║     ██║███████╗███████╗███████║
+    ╚═════╝  ╚═════╝    ╚═╝   ╚═╝     ╚═╝╚══════╝╚══════╝╚══════╝
+EOF
+  echo -e "${RESET}"
+  echo -e "    ${WHITE}${BOLD}Denis Olifer${RESET}  ${DIM}— personal development environment${RESET}"
+  echo -e "    ${DIM}📂 ${DOTFILES}${RESET}"
+  echo
+}
 
-  if ! _exists brew; then
-    echo "Seems like you don't have Homebrew installed!"
-    read -p "Do you agree to proceed with Homebrew installation? [y/N] " -n 1 answer
-    echo
-    if [ "${answer}" != "y" ]; then
+# --- Sync a config file: backup existing, copy new ---
+sync_file() {
+  local src="$1" dest="$2"
+  local name="$(basename "$dest")"
+  mkdir -p "$(dirname "$dest")"
+
+  if [[ -f "$dest" ]]; then
+    if diff -q "$src" "$dest" &>/dev/null; then
+      ok "${name} ${DIM}(unchanged)${RESET}"
       return
     fi
-
-    info "Installing Homebrew..."
-    bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    eval "$(/opt/homebrew/bin/brew shellenv)"
+    cp "$dest" "${dest}.bak"
+    warn "${name} ${DIM}(updated, backup → .bak)${RESET}"
   else
-    success "You already have Homebrew installed. Skipping..."
+    ok "${name} ${DIM}(new)${RESET}"
   fi
 
-  finish
+  cp -f "$src" "$dest"
 }
 
-install_software() {
-  if [ "$(uname)" != "Darwin" ]; then
+# --- Homebrew ---
+install_homebrew() {
+  step "🍺 Homebrew"
+
+  if _exists brew; then
+    ok "Already installed"
+    track "🍺" "Homebrew — already installed"
     return
   fi
 
-  info "Installing software..."
-
-  cd "$SCRIPT_PATH"
-
-  if _exists brew; then
-    brew bundle
-  else
-    error "Error: Brew is not available"
+  read -p "  Install Homebrew? [y/N] " -n 1 answer
+  echo
+  if [[ "$answer" != "y" ]]; then
+    skip "Skipped"
+    track "⏭️" "Homebrew — skipped"
+    return
   fi
 
-  info "Installing zinit..."
-  bash "$SCRIPT_PATH/scripts/zinit.sh"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-  cd -
-
-  finish
+  if [[ -f /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -f /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+  ok "Installed"
+  track "🍺" "Homebrew — installed"
 }
 
-# zsh
-yes | cp -f "$SCRIPT_PATH/.zshrc" ~/.zshrc
+# --- Brew bundle ---
+install_software() {
+  step "📦 Packages (Brewfile)"
 
-# aliases
-mkdir -p ~/.zsh
-yes | cp -f "$SCRIPT_PATH/.zsh/aliases.zsh" ~/.zsh/aliases.zsh
+  if [[ "$(uname)" != "Darwin" ]]; then
+    skip "Not macOS"
+    track "⏭️" "Packages — not macOS"
+    return
+  fi
 
-# starship
-mkdir -p ~/.config
-yes | cp -f "$SCRIPT_PATH/.config/starship.toml" ~/.config/starship.toml
+  if _exists brew; then
+    brew bundle --file="$DOTFILES/Brewfile" --no-lock 2>&1 | grep -E '^(Installing|Upgrading|Using)' || true
+    ok "Brew bundle complete"
+    track "📦" "Packages — synced"
+  else
+    fail "Homebrew not available"
+    track "❌" "Packages — Homebrew missing"
+  fi
+}
 
+# --- Zinit ---
+install_zinit() {
+  step "⚡ Zinit"
+  bash "$DOTFILES/scripts/zinit.sh"
+  ok "Ready"
+  track "⚡" "Zinit — ready"
+}
+
+# --- Config files ---
+sync_configs() {
+  step "🔗 Config files"
+
+  sync_file "$DOTFILES/.zshrc"                "$HOME/.zshrc"
+  sync_file "$DOTFILES/.zsh/aliases.zsh"      "$HOME/.zsh/aliases.zsh"
+  sync_file "$DOTFILES/.gitconfig"            "$HOME/.gitconfig"
+  sync_file "$DOTFILES/.curlrc"               "$HOME/.curlrc"
+  sync_file "$DOTFILES/.config/starship.toml" "$HOME/.config/starship.toml"
+  sync_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
+
+  # ghostty (macOS uses ~/Library path, Linux uses ~/.config)
+  if [[ "$(uname)" == "Darwin" ]]; then
+    local ghostty_dir="$HOME/Library/Application Support/com.mitchellh.ghostty"
+  else
+    local ghostty_dir="$HOME/.config/ghostty"
+  fi
+  sync_file "$DOTFILES/.config/ghostty/config" "$ghostty_dir/config"
+
+  # k8s prompt helper
+  mkdir -p "$HOME/.local/bin"
+  cp -f "$DOTFILES/scripts/k8s-prompt.sh" "$HOME/.local/bin/k8s-prompt"
+  chmod +x "$HOME/.local/bin/k8s-prompt"
+  ok "k8s-prompt ${DIM}(installed)${RESET}"
+
+  # flush caches
+  rm -rf "$HOME/.cache/zsh-init" "$HOME/.zcompdump"*
+  ok "Caches flushed"
+
+  track "🔗" "Configs — synced"
+}
+
+# --- macOS defaults ---
+setup_macos() {
+  if [[ "$(uname)" != "Darwin" ]]; then
+    track "⏭️" "macOS — not macOS"
+    return
+  fi
+
+  step "🍎 macOS defaults"
+  bash "$DOTFILES/scripts/macos.sh" 2>/dev/null
+  ok "Applied"
+  track "🍎" "macOS defaults — applied"
+}
+
+# --- Git local identity ---
+setup_gitlocal() {
+  step "🔑 Git identity"
+
+  if [[ -f "$HOME/.gitlocal" ]]; then
+    local name=$(git config --file "$HOME/.gitlocal" user.name 2>/dev/null || echo "")
+    local email=$(git config --file "$HOME/.gitlocal" user.email 2>/dev/null || echo "")
+    ok "${name} <${email}>"
+    track "🔑" "Git identity — ${name}"
+    return
+  fi
+
+  echo -e "  ${YELLOW}No ~/.gitlocal found — let's set up your git identity${RESET}"
+  read -p "  Name (e.g. Denis Olifer): " git_name
+  read -p "  Email: " git_email
+
+  cat > "$HOME/.gitlocal" <<EOF
+[user]
+	name = $git_name
+	email = $git_email
+EOF
+
+  ok "Created ~/.gitlocal"
+  track "🔑" "Git identity — created"
+}
+
+# --- Summary ---
+print_summary() {
+  local end_time=$(date +%s)
+  local elapsed=$((end_time - START_TIME))
+
+  echo
+  echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "  ${GREEN}${BOLD}🎉 All done!${RESET}  ${DIM}(${elapsed}s)${RESET}"
+  echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo
+  for r in "${RESULTS[@]}"; do
+    echo -e "    ${r}"
+  done
+  echo
+  echo -e "  ${CYAN}${BOLD}→ Open a new terminal to apply changes${RESET}"
+  echo
+}
+
+# --- Main ---
 main() {
-    install_homebrew "$*"
-    install_software "$*"
+  print_header
+
+  install_homebrew
+  install_software
+  install_zinit
+  sync_configs
+  setup_macos
+  setup_gitlocal
+
+  print_summary
 }
 
-main "$*"
+main

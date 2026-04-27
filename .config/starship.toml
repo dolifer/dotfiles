@@ -1,14 +1,17 @@
-# Use custom format
-format= """
+# Starship prompt configuration
+command_timeout = 2000
+format = """
 [╭╴](#D7E8BA)\
 $username\
+$hostname\
 $shlvl\
 $kubernetes\
-$docker_context\
+$directory\
 $git_branch\
 $git_commit\
 $git_state\
 $git_status\
+$git_metrics\
 $package\
 $dotnet\
 $helm\
@@ -16,8 +19,8 @@ $nodejs\
 $aws\
 $env_var\
 $custom\
+$fill\
 $cmd_duration\
-$directory\
 $line_break\
 $jobs\
 $battery\
@@ -25,44 +28,68 @@ $time\
 $status\
 $character"""
 
+[fill]
+symbol = " "
+
 [line_break]
 disabled = false
 
 [directory]
 truncation_symbol = "…/"
-format="[$path](#FFCF3C) [$read_only]($read_only_style) "
+truncation_length = 4
+format = "[$path](#FFCF3C) [$read_only]($read_only_style) "
 
 [character]
 success_symbol = "[╰╴](#D7E8BA)[λ](bold green)"
 error_symbol = "[╰╴](#D7E8BA)[✗](bold red)"
 
-[hostname]
-ssh_only = false
-format =  "[$hostname]($style) "
-trim_at = ".companyname.com"
-disabled = false
-
+# Show username + hostname only on SSH or when root
 [username]
 style_user = "gray bold"
 style_root = "red bold"
-format = "[$user]($style) "
-disabled = false
+format = "[$user]($style)"
 show_always = false
+
+[hostname]
+ssh_only = true
+format = "[@$hostname]($style) "
+trim_at = ""
+
+[git_branch]
+format = "on [$symbol$branch(:$remote_branch)]($style) "
 
 [git_status]
 ahead = "⇡${count}"
-diverged = "⇕⇡${ahead_count}⇣${behind_count} "
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
 behind = "⇣${count}"
+format = '([\[$all_status$ahead_behind\]]($style) )'
+
+[git_metrics]
+disabled = false
+format = "([+$added]($added_style) )([-$removed]($removed_style) )"
 
 [docker_context]
 format = 'via 🐳 [(\($context\))](fg:27 bold) '
 disabled = false
 only_with_files = true
+# Hide OrbStack default context — it's always there and not useful
+detect_env_vars = ["DOCKER_HOST"]
 
 [cmd_duration]
 min_time = 200
 format = "took [$duration](bold yellow)"
 
 [kubernetes]
-format = 'via ☸ [$context](bold fg:27) [(\($namespace\))](bold fg:33) '
-disabled = false
+disabled = true
+
+[custom.k8s]
+description = "Kubernetes context — only in dirs with k8s manifests"
+command = "k8s-prompt"
+when = "test -f kustomization.yaml -o -f Chart.yaml -o -f helmfile.yaml -o -d k8s -o -d helm -o -d charts"
+format = "via [$output]($style) "
+style = ""
+unsafe_no_escape = true
+
+[aws]
+format = 'on [$symbol($profile )(\($region\))]($style) '
+symbol = "☁️ "

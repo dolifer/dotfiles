@@ -6,6 +6,9 @@ _exists() {
 # Quick reload of zsh environment
 alias reload="source $HOME/.zshrc"
 
+# Pull latest dotfiles and re-sync everything
+alias update='git -C $HOME/.dotfiles fetch origin && git -C $HOME/.dotfiles reset --hard origin/main && $HOME/.dotfiles/install.sh'
+
 # Folders Shortcuts
 [ -d ~/Downloads ]            && alias dl='cd ~/Downloads'
 [ -d ~/Desktop ]              && alias dt='cd ~/Desktop'
@@ -31,6 +34,8 @@ unalias cd 2>/dev/null
 PJ_INDEX_FILE="${HOME}/.cache/pj-index.tsv"
 
 # Rebuild the projects index by scanning ~/projects
+# Skips non-git dirs and repos without a remote.
+# Handles duplicate names by appending parent dir segments.
 pj-index() {
   if [[ ! -d "${HOME}/projects" ]]; then
     echo "Error: ~/projects does not exist" >&2
@@ -39,16 +44,36 @@ pj-index() {
 
   mkdir -p "${HOME}/.cache"
   local tmpfile="${PJ_INDEX_FILE}.tmp.$$"
+  local rawfile="${PJ_INDEX_FILE}.raw.$$"
 
+  # First pass: collect raw entries to detect duplicate base names
+  : > "$rawfile"
   for dir in "${HOME}/projects"/*(N/); do
-    [[ ! -d "${dir}/.git" ]] && continue
+    [[ ! -d "${dir}/.git" && ! -f "${dir}/.git" ]] && continue
+
+    local remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
+    [[ -z "$remote_url" ]] && continue
 
     local name="${dir##*/}"
-    local remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null || echo "")
+    printf '%s\t%s\t%s\n' "$name" "$dir" "$remote_url" >> "$rawfile"
+  done
 
-    printf '%s\t%s\t%s\n' "$name" "$dir" "$remote_url"
-  done > "$tmpfile"
+  # Find duplicate base names
+  local -a dupes
+  dupes=(${(f)"$(awk -F'\t' '{print $1}' "$rawfile" | sort | uniq -d)"})
 
+  # Second pass: disambiguate duplicates with parent--name
+  : > "$tmpfile"
+  while IFS=$'\t' read -r name dir remote_url; do
+    if (( ${dupes[(Ie)$name]} )); then
+      local parent="${dir%/*}"
+      parent="${parent##*/}"
+      name="${parent}--${name}"
+    fi
+    printf '%s\t%s\t%s\n' "$name" "$dir" "$remote_url" >> "$tmpfile"
+  done < "$rawfile"
+
+  rm -f "$rawfile"
   mv -f "$tmpfile" "$PJ_INDEX_FILE"
   echo "Index rebuilt: $(wc -l < "$PJ_INDEX_FILE" | tr -d ' ') projects"
 }
@@ -76,45 +101,63 @@ pj() {
   fi
 }
 
-# Create a symlink in current dir using the last path segment as name
-# Usage: pj-link <short-name|/full/path>
+# Create a git worktree in current dir from a project repo
+# Usage: pj-link <project-name> [branch]
+# Without branch: uses the repo's default branch
+# With branch: creates worktree on that branch (fetches if needed)
 pj-link() {
   if [[ -z "$1" ]]; then
-    echo "Usage: pj-link <project-name or /path/to/target>" >&2
+    echo "Usage: pj-link <project-name> [branch]" >&2
     return 1
   fi
 
-  local target="${1%/}"
+  local project="${1%/}"
+  local branch="$2"
+  local repo_path=$(_pj_resolve "$project")
 
-  # If not a path, try resolving from index
-  if [[ "$target" != /* ]]; then
-    local resolved=$(_pj_resolve "$target")
-    if [[ -n "$resolved" ]]; then
-      target="$resolved"
-    else
-      echo "Error: '$target' not found in index. Run pj-index to rebuild." >&2
+  if [[ -z "$repo_path" ]]; then
+    echo "Error: '$project' not found in index. Run pj-index to rebuild." >&2
+    return 1
+  fi
+
+  if [[ ! -d "$repo_path/.git" ]]; then
+    echo "Error: '$repo_path' is not a git repository" >&2
+    return 1
+  fi
+
+  # Detect default branch if not specified
+  if [[ -z "$branch" ]]; then
+    branch=$(git -C "$repo_path" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+    if [[ -z "$branch" ]]; then
+      # Fallback: try common names
+      for candidate in main master develop; do
+        if git -C "$repo_path" rev-parse --verify "origin/$candidate" &>/dev/null; then
+          branch="$candidate"
+          break
+        fi
+      done
+    fi
+    if [[ -z "$branch" ]]; then
+      echo "Error: cannot detect default branch for '$project'. Specify one: pj-link $project <branch>" >&2
       return 1
     fi
   fi
 
-  local name="${target##*/}"
+  local dest="${PWD}/${project}"
 
-  if [[ ! -e "$target" ]]; then
-    echo "Error: '$target' does not exist" >&2
+  if [[ -d "$dest" ]]; then
+    echo "Error: '$dest' already exists" >&2
     return 1
   fi
 
-  if [[ -L "$name" ]]; then
-    rm -f "$name"
-  elif [[ -e "$name" ]]; then
-    echo "Error: '$name' already exists and is not a symlink" >&2
-    return 1
-  fi
+  # Fetch the branch if not available locally
+  git -C "$repo_path" fetch origin "$branch" 2>/dev/null
 
-  ln -s "$target" "$name" && echo "Linked: $name → $target"
+  git -C "$repo_path" worktree add "$dest" "$branch" 2>&1 && \
+    echo "Worktree: $project → $dest (branch: $branch)"
 }
 
-# Clone a repo into ~/projects and rebuild the index
+# Clone a repo into ~/projects, detect default branch, pull it, rebuild index
 # Usage: pj-add git@host:org/repo.git or pj-add https://host/org/repo.git
 pj-add() {
   if [[ -z "$1" ]]; then
@@ -134,14 +177,30 @@ pj-add() {
 
   if [[ -d "$dest" ]]; then
     echo "Already exists: $dest"
-    return 0
+    # Still pull the default branch
+  else
+    mkdir -p "${HOME}/projects"
+    git clone "$1" "$dest" || return 1
   fi
 
-  mkdir -p "${HOME}/projects"
-  git clone "$1" "$dest" && pj-index
+  # Detect default branch and pull
+  local branch=$(git -C "$dest" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+  if [[ -z "$branch" ]]; then
+    # HEAD ref not set — set it from remote
+    git -C "$dest" remote set-head origin --auto 2>/dev/null
+    branch=$(git -C "$dest" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+  fi
+
+  if [[ -n "$branch" ]]; then
+    git -C "$dest" checkout "$branch" 2>/dev/null
+    git -C "$dest" pull --ff-only origin "$branch" 2>/dev/null
+    echo "Default branch: $branch (pulled)"
+  fi
+
+  pj-index
 }
 
-# Remove a symlink by name, silently ignores non-symlinks and missing targets
+# Remove a git worktree by directory name in current dir
 # Usage: pj-unlink folder-name
 pj-unlink() {
   if [[ -z "$1" ]]; then
@@ -150,10 +209,26 @@ pj-unlink() {
   fi
 
   local name="${1%/}"
+  local target="${PWD}/${name}"
 
-  if [[ -L "$name" ]]; then
-    rm -f "$name" && echo "Unlinked: $name"
+  if [[ ! -d "$target" ]]; then
+    echo "Error: '$name' does not exist" >&2
+    return 1
   fi
+
+  # Check if it's a git worktree
+  if [[ -f "$target/.git" ]]; then
+    # .git is a file in worktrees (points to main repo)
+    local main_repo=$(git -C "$target" rev-parse --git-common-dir 2>/dev/null)
+    if [[ -n "$main_repo" ]]; then
+      git -C "$target" worktree remove "$target" --force 2>&1 && \
+        echo "Removed worktree: $name"
+      return
+    fi
+  fi
+
+  echo "Error: '$name' is not a git worktree" >&2
+  return 1
 }
 
 # Pretty-print all indexed projects
@@ -165,7 +240,7 @@ pj-list() {
 
   printf '%-35s %-50s %s\n' "PROJECT" "PATH" "REMOTE"
   printf '%-35s %-50s %s\n' "-------" "----" "------"
-  awk -F'\t' -v home="$HOME" '{ gsub(home "/projects", "~/projects", $2); gsub(/^git@git\.betlab\.com:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "—") }' "$PJ_INDEX_FILE"
+  awk -F'\t' -v home="$HOME" '{ gsub(home "/projects", "~/projects", $2); gsub(/^git@[^:]+:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "—") }' "$PJ_INDEX_FILE"
 }
 
 # --- Completions ---
@@ -178,9 +253,9 @@ _pj_link_complete() {
 }
 
 _pj_unlink_complete() {
-  local -a symlinks
-  symlinks=(${(f)"$(find . -maxdepth 1 -type l -exec basename {} \;)"})
-  compadd -a symlinks
+  local -a worktrees
+  worktrees=(${(f)"$(find . -maxdepth 2 -name '.git' -type f -exec dirname {} \; 2>/dev/null | sed 's|^\./||')"})
+  compadd -a worktrees
 }
 
 compdef _pj_link_complete pj-link

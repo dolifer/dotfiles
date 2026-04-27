@@ -3,6 +3,9 @@ export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
 export LANGUAGE=en_US.UTF-8
 
+# Don't print '%' for partial lines (e.g. curl output without trailing newline)
+unsetopt PROMPT_SP
+
 # --- PATH ---
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -43,9 +46,11 @@ zinit wait lucid blockf for \
 zinit wait lucid for \
   Aloxaf/fzf-tab
 
+# Autosuggestions loaded synchronously (some tools hook into it at init time)
+zinit light zsh-users/zsh-autosuggestions
+
 zinit wait lucid for \
   hlissner/zsh-autopair \
-  zsh-users/zsh-autosuggestions \
   zsh-users/zsh-syntax-highlighting
 
 # --- Completions (single compinit, cached) ---
