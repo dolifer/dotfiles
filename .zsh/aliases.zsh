@@ -519,4 +519,9 @@ compdef _pj_unlink_complete pj-unlink 2>/dev/null
 
 # cd with zsh-z capabilities (must be after function definitions)
 # https://github.com/ajeetdsouza/zoxide
-alias cd='z'
+# Agents (Claude Code, Cursor, Codex) replay aliases in shells where zoxide's
+# chpwd hook isn't set up, so `z` prints its "configuration issue" warning or
+# fails on plain paths there. Keep the builtin cd for them.
+if [[ -o interactive && -z "$CLAUDECODE$CURSOR_AGENT$CODEX_SANDBOX" ]]; then
+  alias cd='z'
+fi
