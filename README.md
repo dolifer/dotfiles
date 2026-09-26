@@ -23,7 +23,18 @@ pj dotfiles -e     # cd and open in Zed; -g opens Fork, -w the remote in the bro
 pj help            # all subcommands: add, link, unlink, ls, clean, index
 ```
 
-The index rebuilds itself when it is a day old or a name is not found. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_EDITOR` or `PJ_GIT_GUI` before `aliases.zsh` is sourced to change the defaults. The old `pj-*` commands still work.
+Scratch work lives in `~/projects/sandbox`, which the index skips:
+
+```sh
+pj new api-spike   # git init a sandbox project and cd in (no name: scratch-<date>)
+pj new <git-url>   # or clone into the sandbox
+pj sb [name]       # go to the sandbox or one of its projects; pj sb ls lists them
+pj keep            # move the current sandbox project into ~/projects
+pj drop            # delete it instead (asks first)
+pj prune 30        # delete sandbox projects untouched for 30 days (asks first)
+```
+
+The index rebuilds itself when it is a day old or a name is not found. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_SANDBOX`, `PJ_EDITOR` or `PJ_GIT_GUI` before `aliases.zsh` is sourced to change the defaults. The old `pj-*` commands still work.
 
 ## Quick bootstrap (fresh machine)
 

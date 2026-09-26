@@ -38,12 +38,16 @@ PJ_INDEX_FILE="${HOME}/.cache/pj-index.tsv"
 : ${PJ_INDEX_TTL:=24}          # hours before the index is rebuilt automatically
 : ${PJ_EDITOR:=zed}            # pj <name> -e
 : ${PJ_GIT_GUI:=open -a Fork}  # pj <name> -g
+: ${PJ_SANDBOX:=${HOME}/projects/sandbox}  # pj new / sb / keep / drop / prune
+zmodload zsh/datetime              # EPOCHSECONDS
+zmodload -F zsh/stat b:zstat
 
 # Print "name<TAB>path<TAB>remote" for every git repo with an origin under $1,
-# descending at most $2 levels. Does not descend into repos.
+# descending at most $2 levels. Does not descend into repos or the sandbox.
 _pj_scan() {
   local dir remote_url
   for dir in "$1"/*(N/); do
+    [[ "$dir" == "$PJ_SANDBOX" ]] && continue
     if [[ -e "${dir}/.git" ]]; then
       remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
       [[ -n "$remote_url" ]] && printf '%s\t%s\t%s\n' "${dir##*/}" "$dir" "$remote_url"
@@ -108,8 +112,8 @@ _pj_ensure_index() {
   (( ${#fresh} )) || pj-index -q
 }
 
-# Print "name<TAB>path" for index entries matching $1 (case-insensitive).
-# Only the best tier is printed: exact name, else prefix, else substring.
+# Print "name<TAB>path" for stdin entries (name<TAB>path[<TAB>...]) matching $1,
+# case-insensitive. Only the best tier is printed: exact, else prefix, else substring.
 _pj_candidates() {
   awk -F'\t' -v q="$1" '
     BEGIN { q = tolower(q) }
@@ -123,44 +127,90 @@ _pj_candidates() {
       if (e)      for (i = 1; i <= e; i++) print exact[i]
       else if (p) for (i = 1; i <= p; i++) print prefix[i]
       else        for (i = 1; i <= m; i++) print mid[i]
-    }' "$PJ_INDEX_FILE"
+    }'
 }
 
 # fzf picker over "name<TAB>path" lines on stdin, previewing the repo state
 _pj_pick() {
   fzf --height=40% --reverse --delimiter=$'\t' --with-nth=1 --query="$1" \
       --prompt='pj> ' --preview-window=right,60% \
-      --preview='git -C {2} log -1 --format="%C(yellow)%h%Creset %s%n%C(dim)%an, %ar%Creset" 2>/dev/null; echo; git -C {2} status -sb 2>/dev/null | head -20'
+      --preview='git -C {2} log -1 --format="%C(yellow)%h%Creset %s%n%C(dim)%an, %ar%Creset" 2>/dev/null; echo; git -C {2} status -sb 2>/dev/null | head -20 || ls -A {2}'
 }
 
-# Resolve a (partial) project name to "name<TAB>path".
-# One match is returned directly; several open the fzf picker.
-# On a miss the index is rebuilt once, in case the repo is new.
-_pj_find() {
-  local query="$1" matches
-  _pj_ensure_index || return 1
-
-  matches=$(_pj_candidates "$query")
-  if [[ -z "$matches" ]]; then
-    local -a recent
-    recent=($PJ_INDEX_FILE(N.mm-1))
-    (( ${#recent} )) || { pj-index -q && matches=$(_pj_candidates "$query") }
-  fi
-
+# Choose one "name<TAB>path" from stdin entries matching $1.
+# One match is printed directly; several open the fzf picker.
+# Returns 2 when nothing matches.
+_pj_select() {
   local -a lines
-  lines=(${(f)matches})
+  lines=(${(f)"$(_pj_candidates "$1")"})
   if (( ${#lines} == 0 )); then
-    echo "pj: no project matches '$query'" >&2
-    return 1
+    return 2
   elif (( ${#lines} == 1 )); then
     print -r -- "${lines[1]}"
   elif _exists fzf; then
-    print -rl -- "${lines[@]}" | _pj_pick "$query"
+    print -rl -- "${lines[@]}" | _pj_pick "$1"
   else
-    echo "pj: '$query' matches several projects:" >&2
+    echo "pj: '$1' matches several projects:" >&2
     printf '  %s\n' "${lines[@]%%$'\t'*}" >&2
     return 1
   fi
+}
+
+# Resolve a (partial) project name to "name<TAB>path" via the index.
+# On a miss the index is rebuilt once, in case the repo is new.
+_pj_find() {
+  _pj_ensure_index || return 1
+
+  local hit rc
+  hit=$(_pj_select "$1" < "$PJ_INDEX_FILE"); rc=$?
+  if (( rc == 2 )); then
+    local -a recent
+    recent=($PJ_INDEX_FILE(N.mm-1))
+    if (( ! ${#recent} )) && pj-index -q; then
+      hit=$(_pj_select "$1" < "$PJ_INDEX_FILE"); rc=$?
+    fi
+  fi
+
+  (( rc == 2 )) && echo "pj: no project matches '$1'" >&2
+  (( rc == 0 )) && print -r -- "$hit"
+  return $rc
+}
+
+# Parse pj flags into the caller's query, no_cd and actions locals
+_pj_parse() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -e|--edit)  actions+=(edit) ;;
+      -g|--git)   actions+=(git) ;;
+      -w|--web)   actions+=(web) ;;
+      -n|--no-cd) no_cd=1 ;;
+      -*)         echo "pj: unknown flag '$arg' (see pj help)" >&2; return 1 ;;
+      *)          query="$arg" ;;
+    esac
+  done
+}
+
+# cd into $1 (unless the caller's no_cd is set), then run the caller's actions
+_pj_go() {
+  local dir="$1" action remote_url
+  [[ -z "$no_cd" ]] && { builtin cd "$dir" || return 1 }
+
+  for action in "${actions[@]}"; do
+    case "$action" in
+      edit) ${=PJ_EDITOR} "$dir" ;;
+      git)  ${=PJ_GIT_GUI} "$dir" ;;
+      web)
+        remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
+        if [[ -z "$remote_url" ]]; then
+          echo "pj: no origin remote in $dir" >&2
+        else
+          _pj_open_url "$(_pj_web_url "$remote_url")"
+        fi
+        ;;
+    esac
+  done
+  return 0
 }
 
 # Open a URL with the OS handler
@@ -188,7 +238,7 @@ Usage:
   pj <name> [flags]       cd into a project (exact, prefix or substring match)
   pj cd <name> [flags]    same, for projects named like a subcommand
 
-Flags:
+Flags (also work with new and sb):
   -e, --edit    open the project in $PJ_EDITOR (zed)
   -g, --git     open the project in $PJ_GIT_GUI (Fork)
   -w, --web     open the project's remote in the browser
@@ -201,6 +251,15 @@ Subcommands:
   pj ls                       list indexed projects                   (pj-list)
   pj clean                    delete branches whose remote is gone    (pj-clean)
   pj index [-q]               rebuild the index                       (pj-index)
+
+Sandbox ($PJ_SANDBOX):
+  pj new [name|git-url]       start a scratch project (git init or clone) and cd in
+  pj sb [name]                cd to the sandbox, or into one of its projects
+  pj sb ls                    list sandbox projects with age and git state
+  pj keep [name] [new-name]   move a sandbox project into ~/projects and index it
+  pj drop [name]              delete a sandbox project (asks first)
+  pj prune [days]             delete sandbox projects untouched for N days (30)
+  Without a name, keep and drop act on the sandbox project you are in.
 EOF
 }
 
@@ -214,24 +273,19 @@ pj() {
     ls|list)      shift; pj-list "$@"; return ;;
     clean)        shift; pj-clean "$@"; return ;;
     index)        shift; pj-index "$@"; return ;;
+    new)          shift; pj-new "$@"; return ;;
+    sb)           shift; pj-sb "$@"; return ;;
+    keep)         shift; pj-keep "$@"; return ;;
+    drop)         shift; pj-drop "$@"; return ;;
+    prune)        shift; pj-prune "$@"; return ;;
     help|-h|--help) _pj_help; return ;;
     cd)           shift ;;
   esac
 
-  local query arg no_cd
+  local query no_cd hit
   local -a actions
-  for arg in "$@"; do
-    case "$arg" in
-      -e|--edit)  actions+=(edit) ;;
-      -g|--git)   actions+=(git) ;;
-      -w|--web)   actions+=(web) ;;
-      -n|--no-cd) no_cd=1 ;;
-      -*)         echo "pj: unknown flag '$arg' (see pj help)" >&2; return 1 ;;
-      *)          query="$arg" ;;
-    esac
-  done
+  _pj_parse "$@" || return 1
 
-  local hit
   if [[ -n "$query" ]]; then
     hit=$(_pj_find "$query") || return 1
   elif _exists fzf; then
@@ -242,25 +296,218 @@ pj() {
     return
   fi
 
-  local dir="${${hit#*$'\t'}%%$'\t'*}"
-  [[ -z "$no_cd" ]] && { builtin cd "$dir" || return 1 }
+  _pj_go "${${hit#*$'\t'}%%$'\t'*}"
+}
 
-  local action remote_url
-  for action in "${actions[@]}"; do
-    case "$action" in
-      edit) ${=PJ_EDITOR} "$dir" ;;
-      git)  ${=PJ_GIT_GUI} "$dir" ;;
-      web)
-        remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
-        if [[ -z "$remote_url" ]]; then
-          echo "pj: no origin remote in $dir" >&2
-        else
-          _pj_open_url "$(_pj_web_url "$remote_url")"
-        fi
-        ;;
-    esac
+# --- Sandbox: scratch projects in PJ_SANDBOX ---
+
+# "name<TAB>path" for each sandbox project, most recently modified first
+_pj_sandbox_list() {
+  local dir
+  for dir in "$PJ_SANDBOX"/*(N/om); do
+    printf '%s\t%s\n' "${dir##*/}" "$dir"
   done
-  return 0
+}
+
+# Resolve $1 to a sandbox project path; without $1, the one containing $PWD
+_pj_sandbox_resolve() {
+  if [[ -z "$1" ]]; then
+    if [[ "$PWD" == "$PJ_SANDBOX"/* ]]; then
+      local rel="${PWD#$PJ_SANDBOX/}"
+      print -r -- "$PJ_SANDBOX/${rel%%/*}"
+      return
+    fi
+    echo "pj: not inside a sandbox project, name one (pj sb ls)" >&2
+    return 1
+  fi
+
+  local hit rc
+  hit=$(_pj_sandbox_list | _pj_select "${1%/}"); rc=$?
+  (( rc == 2 )) && echo "pj: no sandbox project matches '$1'" >&2
+  (( rc == 0 )) || return 1
+  print -r -- "${hit#*$'\t'}"
+}
+
+# Newest modification time (epoch) in a project, ignoring .git and node_modules
+_pj_mtime() {
+  setopt localoptions extendedglob
+  local -a newest
+  newest=("$1"/**/*~*/(.git|node_modules)/*(.DNom[1]))
+  zstat +mtime "${newest[1]:-$1}"
+}
+
+# Short "3d"/"5h"/"12m" age for an epoch time
+_pj_age() {
+  local secs=$(( EPOCHSECONDS - $1 ))
+  if   (( secs >= 86400 )); then print -r -- "$(( secs / 86400 ))d"
+  elif (( secs >= 3600 ));  then print -r -- "$(( secs / 3600 ))h"
+  else                           print -r -- "$(( secs / 60 ))m"
+  fi
+}
+
+# Git state of a project: "clean", "N changed" or "no git"
+_pj_git_state() {
+  if [[ ! -e "$1/.git" ]]; then
+    print -r -- "no git"
+    return
+  fi
+  local changed=$(git -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  if (( changed )); then print -r -- "$changed changed"; else print -r -- "clean"; fi
+}
+
+# Start a scratch project in the sandbox
+# Usage: pj-new [name|git-url] [flags]
+# Without a name: scratch-YYYYMMDD-HHMM. A git URL or path is cloned instead of git init.
+pj-new() {
+  local query no_cd
+  local -a actions
+  _pj_parse "$@" || return 1
+
+  local name="$query" url
+  case "$name" in
+    */*|*:*)
+      url="$name"
+      name="${${${${url%/}%.git}%/}##*/}"
+      ;;
+    '')          name="scratch-$(date +%Y%m%d-%H%M)" ;;
+  esac
+
+  local dest="${PJ_SANDBOX}/${name}"
+  if [[ -e "$dest" ]]; then
+    echo "pj: sandbox already has '$name' (pj sb $name)" >&2
+    return 1
+  fi
+
+  mkdir -p "$PJ_SANDBOX"
+  if [[ -n "$url" ]]; then
+    git clone "$url" "$dest" || return 1
+  else
+    mkdir -p "$dest" && git -C "$dest" init -q || return 1
+  fi
+  echo "New sandbox project: ${dest/#$HOME/~}"
+  _pj_go "$dest"
+}
+
+# Jump to the sandbox or one of its projects
+# Usage: pj-sb [name] [flags] | pj-sb ls
+pj-sb() {
+  [[ "$1" == "ls" ]] && { _pj_sandbox_ls; return }
+
+  local query no_cd
+  local -a actions
+  _pj_parse "$@" || return 1
+
+  if [[ -z "$query" ]]; then
+    mkdir -p "$PJ_SANDBOX"
+    _pj_go "$PJ_SANDBOX"
+    return
+  fi
+
+  local dir
+  dir=$(_pj_sandbox_resolve "$query") || return 1
+  _pj_go "$dir"
+}
+
+# List sandbox projects with age of the last change and git state
+_pj_sandbox_ls() {
+  local -a entries
+  entries=(${(f)"$(_pj_sandbox_list)"})
+  if (( ! ${#entries} )); then
+    echo "Sandbox is empty (${PJ_SANDBOX/#$HOME/~})"
+    return
+  fi
+
+  printf '%-35s %-6s %s\n' "PROJECT" "AGE" "STATE"
+  printf '%-35s %-6s %s\n' "-------" "---" "-----"
+  local entry dir
+  for entry in "${entries[@]}"; do
+    dir="${entry#*$'\t'}"
+    printf '%-35s %-6s %s\n' "${entry%%$'\t'*}" "$(_pj_age "$(_pj_mtime "$dir")")" "$(_pj_git_state "$dir")"
+  done
+}
+
+# Move a sandbox project into the first project root and index it
+# Usage: pj-keep [name] [new-name]
+pj-keep() {
+  local src
+  src=$(_pj_sandbox_resolve "$1") || return 1
+  local dest="${PJ_ROOTS[1]}/${2:-${src##*/}}"
+
+  if [[ -e "$dest" ]]; then
+    echo "pj: ${dest/#$HOME/~} already exists, pass a new name: pj keep ${src##*/} <new-name>" >&2
+    return 1
+  fi
+
+  local inside
+  [[ "$PWD" == "$src" || "$PWD" == "$src"/* ]] && inside="${PWD#$src}"
+
+  mv "$src" "$dest" || return 1
+  echo "Kept: ${src##*/} → ${dest/#$HOME/~}"
+  [[ -n "$inside" || "$PWD" == "$src" ]] && builtin cd "${dest}${inside}"
+
+  if git -C "$dest" remote get-url origin &>/dev/null; then
+    pj-index -q
+  else
+    echo "No origin remote yet. pj finds it once you add one: git remote add origin <url>"
+  fi
+}
+
+# Read a y/N answer; succeeds only on y or yes
+_pj_confirm() {
+  local answer
+  read -r answer
+  [[ "${answer:l}" == (y|yes) ]]
+}
+
+# Delete a sandbox project after confirmation
+# Usage: pj-drop [name]
+pj-drop() {
+  local src
+  src=$(_pj_sandbox_resolve "$1") || return 1
+  if [[ "$src" != "$PJ_SANDBOX"/?* ]]; then
+    echo "pj: refusing to delete '$src' outside the sandbox" >&2
+    return 1
+  fi
+
+  printf 'Delete %s (%s, %s)? [y/N] ' "${src/#$HOME/~}" "$(du -sh "$src" 2>/dev/null | cut -f1 | tr -d ' ')" "$(_pj_git_state "$src")"
+  _pj_confirm || return 1
+
+  [[ "$PWD" == "$src" || "$PWD" == "$src"/* ]] && builtin cd "$PJ_SANDBOX"
+  rm -rf -- "$src" && echo "Dropped ${src##*/}"
+}
+
+# Delete sandbox projects with no changes in the last N days, after confirmation
+# Usage: pj-prune [days]
+pj-prune() {
+  local days="${1:-30}"
+  if [[ "$days" != <-> ]]; then
+    echo "Usage: pj-prune [days]" >&2
+    return 1
+  fi
+
+  local cutoff=$(( EPOCHSECONDS - days * 86400 )) entry dir mtime
+  local -a stale
+  for entry in ${(f)"$(_pj_sandbox_list)"}; do
+    dir="${entry#*$'\t'}"
+    mtime=$(_pj_mtime "$dir")
+    if (( mtime < cutoff )); then
+      stale+=("$dir")
+      printf '  %-35s %-6s %s\n' "${dir##*/}" "$(_pj_age "$mtime")" "$(_pj_git_state "$dir")"
+    fi
+  done
+
+  if (( ! ${#stale} )); then
+    echo "Nothing in the sandbox is older than ${days}d"
+    return
+  fi
+
+  printf 'Delete these %d sandbox project(s)? [y/N] ' ${#stale}
+  _pj_confirm || return 1
+
+  for dir in "${stale[@]}"; do
+    [[ "$PWD" == "$dir" || "$PWD" == "$dir"/* ]] && builtin cd "$PJ_SANDBOX"
+    rm -rf -- "$dir" && echo "Dropped ${dir##*/}"
+  done
 }
 
 # Create a git worktree in current dir from a project repo
@@ -474,6 +721,12 @@ _pj_link_complete() {
   fi
 }
 
+_pj_sandbox_complete() {
+  local -a names
+  names=(${(f)"$(_pj_sandbox_list | cut -f1)"})
+  _wanted sandbox expl 'sandbox project' compadd -a names
+}
+
 _pj_unlink_complete() {
   local -a worktrees
   worktrees=(${(f)"$(find . -maxdepth 2 -name '.git' -type f -exec dirname {} \; 2>/dev/null | sed 's|^\./||')"})
@@ -494,6 +747,11 @@ _pj() {
       'ls:list indexed projects'
       'clean:delete branches whose remote is gone'
       'index:rebuild the project index'
+      'new:start a scratch project in the sandbox'
+      'sb:go to the sandbox or one of its projects'
+      'keep:move a sandbox project into ~/projects'
+      'drop:delete a sandbox project'
+      'prune:delete sandbox projects untouched for N days'
       'cd:jump to a project named like a subcommand'
       'help:show usage'
     )
@@ -503,7 +761,13 @@ _pj() {
   fi
 
   case "${words[2]}" in
-    add|ls|list|clean|help) ;;
+    add|ls|list|clean|help|prune) ;;
+    new)    [[ "$PREFIX" == -* ]] && _pj_flags_complete ;;
+    sb)
+      if [[ "$PREFIX" == -* ]]; then _pj_flags_complete
+      elif (( CURRENT == 3 )); then compadd ls; _pj_sandbox_complete
+      fi ;;
+    keep|drop) (( CURRENT == 3 )) && _pj_sandbox_complete ;;
     index)  compadd -- -q ;;
     link)   (( CURRENT-- )); shift words; _pj_link_complete ;;
     unlink) _pj_unlink_complete ;;
