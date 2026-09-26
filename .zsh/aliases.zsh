@@ -30,32 +30,53 @@ fi
 unalias cd 2>/dev/null
 
 # --- Projects Index ---
-# Index file: ~/.cache/pj-index.tsv (tab-separated: short_name, full_path, gitlab_url)
+# Index file: ~/.cache/pj-index.tsv (tab-separated: short_name, full_path, remote_url)
+# Settings below can be overridden before this file is sourced.
 PJ_INDEX_FILE="${HOME}/.cache/pj-index.tsv"
+(( ${+PJ_ROOTS} )) || typeset -ga PJ_ROOTS=("${HOME}/projects")  # dirs scanned for repos
+: ${PJ_DEPTH:=1}               # how many levels below each root to look for repos
+: ${PJ_INDEX_TTL:=24}          # hours before the index is rebuilt automatically
+: ${PJ_EDITOR:=zed}            # pj <name> -e
+: ${PJ_GIT_GUI:=open -a Fork}  # pj <name> -g
 
-# Rebuild the projects index by scanning ~/projects
+# Print "name<TAB>path<TAB>remote" for every git repo with an origin under $1,
+# descending at most $2 levels. Does not descend into repos.
+_pj_scan() {
+  local dir remote_url
+  for dir in "$1"/*(N/); do
+    if [[ -e "${dir}/.git" ]]; then
+      remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
+      [[ -n "$remote_url" ]] && printf '%s\t%s\t%s\n' "${dir##*/}" "$dir" "$remote_url"
+    elif (( $2 > 1 )); then
+      _pj_scan "$dir" $(( $2 - 1 ))
+    fi
+  done
+}
+
+# Rebuild the projects index by scanning PJ_ROOTS
 # Skips non-git dirs and repos without a remote.
 # Handles duplicate names by appending parent dir segments.
+# Usage: pj-index [-q]
 pj-index() {
-  if [[ ! -d "${HOME}/projects" ]]; then
-    echo "Error: ~/projects does not exist" >&2
+  local quiet
+  [[ "$1" == "-q" ]] && quiet=1
+
+  local -a roots
+  roots=(${^PJ_ROOTS}(N/))
+  if (( ! ${#roots} )); then
+    echo "Error: no project root exists (PJ_ROOTS: ${PJ_ROOTS[*]})" >&2
     return 1
   fi
 
-  mkdir -p "${HOME}/.cache"
+  mkdir -p "${PJ_INDEX_FILE:h}"
   local tmpfile="${PJ_INDEX_FILE}.tmp.$$"
   local rawfile="${PJ_INDEX_FILE}.raw.$$"
 
   # First pass: collect raw entries to detect duplicate base names
   : > "$rawfile"
-  for dir in "${HOME}/projects"/*(N/); do
-    [[ ! -d "${dir}/.git" && ! -f "${dir}/.git" ]] && continue
-
-    local remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
-    [[ -z "$remote_url" ]] && continue
-
-    local name="${dir##*/}"
-    printf '%s\t%s\t%s\n' "$name" "$dir" "$remote_url" >> "$rawfile"
+  local root
+  for root in "${roots[@]}"; do
+    _pj_scan "$root" "$PJ_DEPTH" >> "$rawfile"
   done
 
   # Find duplicate base names
@@ -64,9 +85,10 @@ pj-index() {
 
   # Second pass: disambiguate duplicates with parent--name
   : > "$tmpfile"
+  local name dir remote_url parent
   while IFS=$'\t' read -r name dir remote_url; do
     if (( ${dupes[(Ie)$name]} )); then
-      local parent="${dir%/*}"
+      parent="${dir%/*}"
       parent="${parent##*/}"
       name="${parent}--${name}"
     fi
@@ -75,30 +97,170 @@ pj-index() {
 
   rm -f "$rawfile"
   mv -f "$tmpfile" "$PJ_INDEX_FILE"
-  echo "Index rebuilt: $(wc -l < "$PJ_INDEX_FILE" | tr -d ' ') projects"
+  [[ -z "$quiet" ]] && echo "Index rebuilt: $(wc -l < "$PJ_INDEX_FILE" | tr -d ' ') projects"
+  return 0
 }
 
-# Resolve a short name to full path via the index
-_pj_resolve() {
-  local query="$1"
-  if [[ -f "$PJ_INDEX_FILE" ]]; then
-    awk -F'\t' -v q="$query" '$1 == q { print $2; exit }' "$PJ_INDEX_FILE"
+# Rebuild the index quietly when it is missing or older than PJ_INDEX_TTL hours
+_pj_ensure_index() {
+  local -a fresh
+  fresh=($PJ_INDEX_FILE(N.mh-${PJ_INDEX_TTL}))
+  (( ${#fresh} )) || pj-index -q
+}
+
+# Print "name<TAB>path" for index entries matching $1 (case-insensitive).
+# Only the best tier is printed: exact name, else prefix, else substring.
+_pj_candidates() {
+  awk -F'\t' -v q="$1" '
+    BEGIN { q = tolower(q) }
+    {
+      n = tolower($1); line = $1 "\t" $2
+      if (n == q)              exact[++e] = line
+      else if (index(n, q) == 1) prefix[++p] = line
+      else if (index(n, q))      mid[++m] = line
+    }
+    END {
+      if (e)      for (i = 1; i <= e; i++) print exact[i]
+      else if (p) for (i = 1; i <= p; i++) print prefix[i]
+      else        for (i = 1; i <= m; i++) print mid[i]
+    }' "$PJ_INDEX_FILE"
+}
+
+# fzf picker over "name<TAB>path" lines on stdin, previewing the repo state
+_pj_pick() {
+  fzf --height=40% --reverse --delimiter=$'\t' --with-nth=1 --query="$1" \
+      --prompt='pj> ' --preview-window=right,60% \
+      --preview='git -C {2} log -1 --format="%C(yellow)%h%Creset %s%n%C(dim)%an, %ar%Creset" 2>/dev/null; echo; git -C {2} status -sb 2>/dev/null | head -20'
+}
+
+# Resolve a (partial) project name to "name<TAB>path".
+# One match is returned directly; several open the fzf picker.
+# On a miss the index is rebuilt once, in case the repo is new.
+_pj_find() {
+  local query="$1" matches
+  _pj_ensure_index || return 1
+
+  matches=$(_pj_candidates "$query")
+  if [[ -z "$matches" ]]; then
+    local -a recent
+    recent=($PJ_INDEX_FILE(N.mm-1))
+    (( ${#recent} )) || { pj-index -q && matches=$(_pj_candidates "$query") }
   fi
-}
 
-# Navigate to ~/projects or a specific project by short name
-pj() {
-  if [[ -z "$1" ]]; then
-    builtin cd ~/projects
+  local -a lines
+  lines=(${(f)matches})
+  if (( ${#lines} == 0 )); then
+    echo "pj: no project matches '$query'" >&2
+    return 1
+  elif (( ${#lines} == 1 )); then
+    print -r -- "${lines[1]}"
+  elif _exists fzf; then
+    print -rl -- "${lines[@]}" | _pj_pick "$query"
   else
-    local resolved=$(_pj_resolve "$1")
-    if [[ -n "$resolved" ]]; then
-      builtin cd "$resolved"
-    else
-      echo "Error: '$1' not found in index. Run pj-index to rebuild." >&2
-      return 1
-    fi
+    echo "pj: '$query' matches several projects:" >&2
+    printf '  %s\n' "${lines[@]%%$'\t'*}" >&2
+    return 1
   fi
+}
+
+# Open a URL with the OS handler
+_pj_open_url() {
+  if [[ "$OSTYPE" == darwin* ]]; then
+    open "$1"
+  else
+    xdg-open "$1" >/dev/null 2>&1
+  fi
+}
+
+# Turn a git remote (ssh or https) into its web URL
+_pj_web_url() {
+  print -r -- "$1" | sed -E \
+    -e 's#\.git$##' \
+    -e 's#^ssh://([^@/]+@)?([^/:]+)(:[0-9]+)?/#https://\2/#' \
+    -e 's#^[^@/:]+@([^:/]+):#https://\1/#' \
+    -e 's#^(https?)://[^@/]+@#\1://#'
+}
+
+_pj_help() {
+  cat <<'EOF'
+Usage:
+  pj                      pick a project with fzf and cd into it
+  pj <name> [flags]       cd into a project (exact, prefix or substring match)
+  pj cd <name> [flags]    same, for projects named like a subcommand
+
+Flags:
+  -e, --edit    open the project in $PJ_EDITOR (zed)
+  -g, --git     open the project in $PJ_GIT_GUI (Fork)
+  -w, --web     open the project's remote in the browser
+  -n, --no-cd   stay in the current directory
+
+Subcommands:
+  pj add <git-url>            clone into the first root and reindex   (pj-add)
+  pj link <name> [branch]     create a worktree here                  (pj-link)
+  pj unlink <folder>          remove a worktree here                  (pj-unlink)
+  pj ls                       list indexed projects                   (pj-list)
+  pj clean                    delete branches whose remote is gone    (pj-clean)
+  pj index [-q]               rebuild the index                       (pj-index)
+EOF
+}
+
+# Jump to a project, optionally opening it in the editor, git GUI or browser.
+# See _pj_help for usage.
+pj() {
+  case "$1" in
+    add)          shift; pj-add "$@"; return ;;
+    link)         shift; pj-link "$@"; return ;;
+    unlink)       shift; pj-unlink "$@"; return ;;
+    ls|list)      shift; pj-list "$@"; return ;;
+    clean)        shift; pj-clean "$@"; return ;;
+    index)        shift; pj-index "$@"; return ;;
+    help|-h|--help) _pj_help; return ;;
+    cd)           shift ;;
+  esac
+
+  local query arg no_cd
+  local -a actions
+  for arg in "$@"; do
+    case "$arg" in
+      -e|--edit)  actions+=(edit) ;;
+      -g|--git)   actions+=(git) ;;
+      -w|--web)   actions+=(web) ;;
+      -n|--no-cd) no_cd=1 ;;
+      -*)         echo "pj: unknown flag '$arg' (see pj help)" >&2; return 1 ;;
+      *)          query="$arg" ;;
+    esac
+  done
+
+  local hit
+  if [[ -n "$query" ]]; then
+    hit=$(_pj_find "$query") || return 1
+  elif _exists fzf; then
+    _pj_ensure_index || return 1
+    hit=$(cut -f1,2 "$PJ_INDEX_FILE" | _pj_pick) || return 1
+  else
+    builtin cd "${PJ_ROOTS[1]}"
+    return
+  fi
+
+  local dir="${${hit#*$'\t'}%%$'\t'*}"
+  [[ -z "$no_cd" ]] && { builtin cd "$dir" || return 1 }
+
+  local action remote_url
+  for action in "${actions[@]}"; do
+    case "$action" in
+      edit) ${=PJ_EDITOR} "$dir" ;;
+      git)  ${=PJ_GIT_GUI} "$dir" ;;
+      web)
+        remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
+        if [[ -z "$remote_url" ]]; then
+          echo "pj: no origin remote in $dir" >&2
+        else
+          _pj_open_url "$(_pj_web_url "$remote_url")"
+        fi
+        ;;
+    esac
+  done
+  return 0
 }
 
 # Create a git worktree in current dir from a project repo
@@ -111,14 +273,10 @@ pj-link() {
     return 1
   fi
 
-  local project="${1%/}"
   local branch="$2"
-  local repo_path=$(_pj_resolve "$project")
-
-  if [[ -z "$repo_path" ]]; then
-    echo "Error: '$project' not found in index. Run pj-index to rebuild." >&2
-    return 1
-  fi
+  local hit=$(_pj_find "${1%/}") || return 1
+  local project="${hit%%$'\t'*}"
+  local repo_path="${hit#*$'\t'}"
 
   if [[ ! -d "$repo_path/.git" ]]; then
     echo "Error: '$repo_path' is not a git repository" >&2
@@ -168,7 +326,7 @@ pj-link() {
     echo "Worktree: $project → $dest (branch: $branch)"
 }
 
-# Clone a repo into ~/projects, detect default branch, pull it, rebuild index
+# Clone a repo into the first PJ_ROOTS dir, detect default branch, pull it, rebuild index
 # Usage: pj-add git@host:org/repo.git or pj-add https://host/org/repo.git
 pj-add() {
   if [[ -z "$1" ]]; then
@@ -184,13 +342,13 @@ pj-add() {
     return 1
   fi
 
-  local dest="${HOME}/projects/${name}"
+  local dest="${PJ_ROOTS[1]}/${name}"
 
   if [[ -d "$dest" ]]; then
     echo "Already exists: $dest"
     # Still pull the default branch
   else
-    mkdir -p "${HOME}/projects"
+    mkdir -p "${PJ_ROOTS[1]}"
     git clone "$1" "$dest" || return 1
   fi
 
@@ -244,22 +402,22 @@ pj-unlink() {
 
 # Pretty-print all indexed projects
 pj-list() {
-  if [[ ! -f "$PJ_INDEX_FILE" ]]; then
-    echo "No index found. Run pj-index first." >&2
-    return 1
-  fi
+  _pj_ensure_index || return 1
 
   printf '%-35s %-50s %s\n' "PROJECT" "PATH" "REMOTE"
   printf '%-35s %-50s %s\n' "-------" "----" "------"
-  awk -F'\t' -v home="$HOME" '{ gsub(home "/projects", "~/projects", $2); gsub(/^git@[^:]+:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "—") }' "$PJ_INDEX_FILE"
+  awk -F'\t' -v home="$HOME" '{ if (index($2, home) == 1) $2 = "~" substr($2, length(home) + 1); gsub(/^git@[^:]+:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "—") }' "$PJ_INDEX_FILE"
 }
 
 # --- Cleanup stale branches across all projects ---
 # Removes local branches whose tracked remote branch no longer exists.
 # Keeps local-only branches (no upstream set).
 pj-clean() {
-  local total=0
-  for dir in "${HOME}/projects"/*(N/); do
+  _pj_ensure_index || return 1
+  local total=0 dir
+  local -a dirs
+  dirs=(${(f)"$(cut -f2 "$PJ_INDEX_FILE")"})
+  for dir in "${dirs[@]}"; do
     [[ ! -d "${dir}/.git" ]] && continue
     local name="${dir##*/}"
 
@@ -286,11 +444,33 @@ pj-clean() {
 }
 
 # --- Completions ---
+_pj_projects_complete() {
+  local -a projects
+  [[ -f "$PJ_INDEX_FILE" ]] && projects=(${(f)"$(cut -f1 "$PJ_INDEX_FILE")"})
+  _wanted projects expl 'project' compadd -a projects
+}
+
+_pj_flags_complete() {
+  local -a flags
+  flags=(
+    '-e:open in editor'
+    '-g:open in git GUI'
+    '-w:open remote in browser'
+    '-n:do not cd'
+  )
+  _describe -t flags 'flag' flags
+}
+
 _pj_link_complete() {
-  if [[ -f "$PJ_INDEX_FILE" ]]; then
-    local -a projects
-    projects=(${(f)"$(awk -F'\t' '{ print $1 }' "$PJ_INDEX_FILE")"})
-    compadd -a projects
+  if (( CURRENT == 2 )); then
+    _pj_projects_complete
+  elif (( CURRENT == 3 )); then
+    # Branches of the chosen project, local and remote
+    local repo_path=$(awk -F'\t' -v q="${words[2]%/}" '$1 == q { print $2; exit }' "$PJ_INDEX_FILE" 2>/dev/null)
+    [[ -z "$repo_path" ]] && return
+    local -a branches
+    branches=(${(f)"$(git -C "$repo_path" for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin 2>/dev/null | sed -e 's#^origin/##' -e '/^HEAD$/d' -e '/^origin$/d' | sort -u)"})
+    _wanted branches expl 'branch' compadd -a branches
   fi
 }
 
@@ -300,8 +480,41 @@ _pj_unlink_complete() {
   compadd -a worktrees
 }
 
+_pj() {
+  if (( CURRENT == 2 )); then
+    if [[ "$PREFIX" == -* ]]; then
+      _pj_flags_complete
+      return
+    fi
+    local -a subcmds
+    subcmds=(
+      'add:clone a repo and index it'
+      'link:create a worktree here'
+      'unlink:remove a worktree here'
+      'ls:list indexed projects'
+      'clean:delete branches whose remote is gone'
+      'index:rebuild the project index'
+      'cd:jump to a project named like a subcommand'
+      'help:show usage'
+    )
+    _describe -t commands 'subcommand' subcmds
+    _pj_projects_complete
+    return
+  fi
+
+  case "${words[2]}" in
+    add|ls|list|clean|help) ;;
+    index)  compadd -- -q ;;
+    link)   (( CURRENT-- )); shift words; _pj_link_complete ;;
+    unlink) _pj_unlink_complete ;;
+    cd)
+      if [[ "$PREFIX" == -* ]]; then _pj_flags_complete; else _pj_projects_complete; fi ;;
+    *)      _pj_flags_complete ;;
+  esac
+}
+
+compdef _pj pj 2>/dev/null
 compdef _pj_link_complete pj-link 2>/dev/null
-compdef _pj_link_complete pj 2>/dev/null
 compdef _pj_unlink_complete pj-unlink 2>/dev/null
 
 # cd with zsh-z capabilities (must be after function definitions)
