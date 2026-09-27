@@ -87,13 +87,11 @@ _dot_doctor() {
   local name=$(git config --file "${HOME}/.gitlocal" user.name 2>/dev/null)
   [[ -n "$name" ]] && _dot_ok "identity: $name <$(git config --file "${HOME}/.gitlocal" user.email)>" \
                    || _dot_bad "~/.gitlocal has no identity (dot install)"
-  local key=$(git config --file "${HOME}/.gitlocal" user.signingkey 2>/dev/null)
-  if [[ -z "$key" ]]; then
-    _dot_bad "no signing key in ~/.gitlocal (commits are signed)"
-  elif gpg --list-secret-keys "$key" &>/dev/null; then
-    _dot_ok "signing key $key"
+  local signing
+  if signing=$(bash "$DOTFILES/scripts/git-signing.sh"); then
+    _dot_ok "commit $signing"
   else
-    _dot_bad "signing key $key not in the GPG keyring"
+    _dot_info "commit $signing"
   fi
 
   echo "Repo"
