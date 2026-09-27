@@ -94,6 +94,16 @@ link_file() {
   ln -s "$src" "$dest"
 }
 
+# --- Remove a link to a config the repo no longer ships (leaves real files alone) ---
+unlink_file() {
+  local dest="$1"
+  local name="${dest#"$HOME"/}"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$DOTFILES/"* ]]; then
+    rm -f "$dest"
+    ok "${name} ${DIM}(old link removed)${RESET}"
+  fi
+}
+
 # --- Homebrew ---
 install_homebrew() {
   step "🍺 Homebrew"
@@ -213,10 +223,12 @@ sync_configs() {
   link_file "$DOTFILES/.zsh/aliases.zsh"          "$HOME/.zsh/aliases.zsh"
   link_file "$DOTFILES/.zsh/dot.zsh"              "$HOME/.zsh/dot.zsh"
   link_file "$DOTFILES/.gitconfig"                "$HOME/.gitconfig"
-  link_file "$DOTFILES/.curlrc"                   "$HOME/.curlrc"
   link_file "$DOTFILES/.config/starship.toml"     "$HOME/.config/starship.toml"
   link_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
   link_file "$DOTFILES/.config/ghostty/config"    "$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+
+  # No longer managed: its curl defaults broke scripts that expect stock curl
+  unlink_file "$HOME/.curlrc"
 
   # GPG agent (pinentry-mac)
   link_file "$DOTFILES/.gnupg/gpg-agent.conf"     "$HOME/.gnupg/gpg-agent.conf"
