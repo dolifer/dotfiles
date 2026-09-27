@@ -73,7 +73,7 @@ _dot_doctor() {
 
   echo "Links"
   local link target
-  for link in .zshrc .zsh/aliases.zsh .zsh/dot.zsh .gitconfig .curlrc .config/starship.toml \
+  for link in .zshrc .zsh/aliases.zsh .zsh/dot.zsh .gitconfig .config/starship.toml \
               .config/zed/settings.json .gnupg/gpg-agent.conf; do
     target="${HOME}/${link}"
     if [[ -L "$target" && "$(readlink "$target")" == "$DOTFILES/"* ]]; then
