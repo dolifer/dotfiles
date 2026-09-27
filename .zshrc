@@ -81,7 +81,19 @@ zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 
 # --- Tool inits (cached) ---
 _cached_eval starship  'starship init zsh --print-full-init'
-_cached_eval zoxide   'zoxide init zsh'
+# zoxide: `cd` ranks directories by frecency, `cdi` (or `cd foo<Space><Tab>`) picks one with fzf.
+# Agents (Claude Code, Cursor, Codex) snapshot shell functions into shells without the
+# chpwd hook, so they get the plain `z`/`zi` commands and keep the builtin cd.
+export _ZO_EXCLUDE_DIRS="$HOME:/tmp/*:/private/tmp/*:/private/var/*:/var/folders/*:/Volumes/*"
+(( $+commands[eza] )) && export _ZO_FZF_OPTS="--exact --no-sort --cycle --keep-right --height=45% \
+--layout=reverse --info=inline --border=sharp --select-1 --exit-0 \
+--preview='eza -1 --color=always --icons {2..}' --preview-window=down,30%,sharp"
+if [[ -o interactive && -z "$CLAUDECODE$CURSOR_AGENT$CODEX_SANDBOX" ]]; then
+  _cached_eval zoxide-cd 'zoxide init zsh --cmd cd'
+  alias z='cd' zi='cdi'
+else
+  _cached_eval zoxide 'zoxide init zsh'
+fi
 
 # --- fzf keybindings + completion (Ctrl-T files, Ctrl-R history, Alt-C dirs) ---
 _cached_eval fzf 'fzf --zsh'
@@ -108,3 +120,19 @@ zstyle ':fzf-tab:complete:(ls|eza|cat|bat|less|zed|vim|nvim|code|open|rm|cp|mv):
 # --- Aliases & functions ---
 source ~/.zsh/aliases.zsh
 source ~/.zsh/dot.zsh
+
+# --- Seed zoxide with pj projects (only paths it doesn't know yet, once per reindex) ---
+_zoxide_seed_pj() {
+  local index=${PJ_INDEX_FILE:-$HOME/.cache/pj-index.tsv}
+  local stamp=$HOME/.cache/zsh-init/zoxide-pj.stamp
+  (( $+commands[zoxide] )) && [[ -s $index && ( ! -e $stamp || $index -nt $stamp ) ]] || return 0
+  local -a known new
+  known=(${(f)"$(zoxide query --list 2>/dev/null)"})
+  for dir in ${(f)"$(cut -f2 "$index")"}; do
+    [[ -d $dir ]] && (( ! ${known[(Ie)$dir]} )) && new+=($dir)
+  done
+  (( $#new )) && zoxide add -- $new
+  mkdir -p ${stamp:h} && touch $stamp
+}
+_zoxide_seed_pj
+unfunction _zoxide_seed_pj

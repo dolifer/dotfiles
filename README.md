@@ -10,6 +10,7 @@ Features
 - Configs are symlinked into the repo, so edits in `~` are edits to the repo
 - Cached tool inits (brew, starship, zoxide, fzf) for fast startup
 - fzf with fd and bat previews, delta for git diffs
+- [zoxide](https://github.com/ajeetdsouza/zoxide) behind `cd`: `cd dot zsh` jumps by frecency, `cdi` (or `cd foo<Space><Tab>`) picks with fzf and an eza preview, `pj` projects are known before your first visit, and `zoxide edit` fixes scores
 - Useful [aliases](./.zsh/aliases.zsh) and project index (`pj` commands)
 - Ghostty and Zed editor configs
 
