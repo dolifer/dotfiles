@@ -33,6 +33,10 @@ dot cd         # jump into the repo
 
 `update` still works as an alias for `dot update`.
 
+## Home and work machines
+
+The first `install` asks whether this is a work machine and saves the answer (`home` or `work`) in `~/.config/dotfiles/profile`. Every machine gets `Brewfile`; only home machines also get `Brewfile.home` (currently just `gh`). To switch a machine, edit that file and run `dot install`. Switching to work doesn't uninstall anything, so remove home-only tools by hand (`brew uninstall gh`).
+
 ## Machine-local settings
 
 Put anything that shouldn't be committed (work env vars, tokens, `PJ_*` overrides) in `~/.zshrc.local`. It is sourced before the aliases and never touched by install. Git identity and signing key live in `~/.gitlocal` the same way.

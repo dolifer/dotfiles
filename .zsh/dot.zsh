@@ -64,11 +64,20 @@ _dot_doctor() {
   _dot_bad()  { echo "  ❌ $*"; (( problems++ )); }
   _dot_info() { echo "  💡 $*"; }
 
-  echo "Tools"
+  local profile=""
+  [[ -f "${HOME}/.config/dotfiles/profile" ]] && profile=$(<"${HOME}/.config/dotfiles/profile")
+  profile=${profile//[[:space:]]/}
+  echo "Tools (${profile:-no} profile)"
+  [[ -z "$profile" ]] && _dot_bad "no profile set (dot install asks home or work)"
   local t
-  for t in brew git starship zoxide fzf fd bat eza rg delta gh gpg pinentry-mac; do
+  for t in brew git starship zoxide fzf fd bat eza rg delta gpg pinentry-mac; do
     (( $+commands[$t] )) && _dot_ok "$t" || _dot_bad "$t not found (brew bundle --file=$DOTFILES/Brewfile)"
   done
+  if [[ "$profile" == "home" ]]; then
+    for t in gh; do
+      (( $+commands[$t] )) && _dot_ok "$t" || _dot_bad "$t not found (brew bundle --file=$DOTFILES/Brewfile.home)"
+    done
+  fi
   [[ -d "${HOME}/.local/share/zinit/zinit.git" ]] && _dot_ok "zinit" || _dot_bad "zinit missing (dot install)"
 
   echo "Links"
