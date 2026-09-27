@@ -21,10 +21,6 @@ if _exists eza; then
   alias la='ls -lAh'
 fi
 
-# cd with zsh-z capabilities
-# https://github.com/ajeetdsouza/zoxide
-# NOTE: alias is set after function definitions to avoid parse-time expansion
-unalias cd 2>/dev/null
 
 # --- Projects Index ---
 # Index file: ~/.cache/pj-index.tsv (tab-separated: short_name, full_path, gitlab_url)
@@ -300,7 +296,3 @@ _pj_unlink_complete() {
 compdef _pj_link_complete pj-link 2>/dev/null
 compdef _pj_link_complete pj 2>/dev/null
 compdef _pj_unlink_complete pj-unlink 2>/dev/null
-
-# cd with zsh-z capabilities (must be after function definitions)
-# https://github.com/ajeetdsouza/zoxide
-alias cd='z'
