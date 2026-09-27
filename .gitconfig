@@ -10,6 +10,32 @@
 	old = red bold
 	new = green bold
 
+[core]
+	pager = delta
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+	line-numbers = true
+
+[merge]
+	conflictstyle = zdiff3
+
+[diff]
+	colorMoved = default
+
+[alias]
+	st = status -sb
+	lg = log --graph --pretty=format:'%C(yellow)%h%C(reset) %C(cyan)%ad%C(reset) %s%C(auto)%d %C(dim)%an%C(reset)' --date=short
+	undo = reset --soft HEAD~1
+	amend = commit --amend --no-edit
+	recent = branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)'
+
+[fetch]
+	prune = true
+
 [init]
 	defaultBranch = main
 
@@ -22,6 +48,7 @@
 
 [rerere]
 	enabled = true
+	autoupdate = true
 
 [commit]
 	gpgsign = true

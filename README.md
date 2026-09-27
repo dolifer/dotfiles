@@ -6,8 +6,10 @@ Features
 - [🚀 Starship](https://starship.rs) as a prompt
 - [zinit](https://github.com/zdharma-continuum/zinit) plugin manager with turbo mode (~230ms startup)
 - Syntax highlighting, autosuggestions, fzf-tab completion
-- OS-aware ssh-agent (macOS Keychain / Linux ssh-agent plugin)
-- Cached tool inits (starship, zoxide) for fast startup
+- macOS only; Linux boxes are reached over ssh (Ghostty terminfo is installed on them automatically)
+- Configs are symlinked into the repo, so edits in `~` are edits to the repo
+- Cached tool inits (brew, starship, zoxide, fzf) for fast startup
+- fzf with fd and bat previews, delta for git diffs
 - Useful [aliases](./.zsh/aliases.zsh) and project index (`pj` commands)
 - Ghostty and Zed editor configs
 
@@ -19,13 +21,21 @@ curl -fsSL https://raw.githubusercontent.com/dolifer/dotfiles/main/bootstrap.sh 
 
 This will install Xcode CLT (if needed), clone the repo, install Homebrew + packages, set up zinit, and sync all configs.
 
-## Update
+## Everyday use: `dot`
 
 ```sh
-update
+dot update     # pull latest, re-run install, restart zsh (refuses if the repo has local changes)
+dot edit       # open the repo in $EDITOR (Zed by default); dot edit .zshrc for one file
+dot status     # what you've changed; dot diff to see it
+dot doctor     # check tools, links, git identity and signing key
+dot cd         # jump into the repo
 ```
 
-Pulls latest dotfiles, discards local changes, and re-syncs everything.
+`update` still works as an alias for `dot update`.
+
+## Machine-local settings
+
+Put anything that shouldn't be committed (work env vars, tokens, `PJ_*` overrides) in `~/.zshrc.local`. It is sourced before the aliases and never touched by install. Git identity and signing key live in `~/.gitlocal` the same way.
 
 ## Manual install
 

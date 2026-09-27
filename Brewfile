@@ -18,6 +18,12 @@ brew "pygments"
 brew "jq"
 brew "yq"
 brew "kubectx"
+brew "bat"
+brew "ripgrep"
+brew "fd"
+brew "gh"
+brew "git-delta"
+brew "pinentry-mac"
 
 # ------------------------------------------------------------------------------
 # Cask
