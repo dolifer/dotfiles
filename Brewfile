@@ -1,4 +1,5 @@
-# Homebrew Bundle
+# Homebrew Bundle — installed on every machine
+# Home-only extras live in Brewfile.home
 # https://github.com/Homebrew/homebrew-bundle
 
 # ------------------------------------------------------------------------------
@@ -21,7 +22,6 @@ brew "kubectx"
 brew "bat"
 brew "ripgrep"
 brew "fd"
-brew "gh"
 brew "git-delta"
 brew "pinentry-mac"
 
