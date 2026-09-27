@@ -70,20 +70,27 @@ _dot_doctor() {
   echo "Tools (${profile:-no} profile)"
   [[ -z "$profile" ]] && _dot_bad "no profile set (dot install asks home or work)"
   local t
-  for t in brew git starship zoxide fzf fd bat eza rg delta gpg pinentry-mac; do
+  for t in brew git starship zoxide fzf fd bat eza rg delta gpg pinentry-mac \
+           atuin tldr btop dust xh; do
     (( $+commands[$t] )) && _dot_ok "$t" || _dot_bad "$t not found (brew bundle --file=$DOTFILES/Brewfile)"
   done
   if [[ "$profile" == "home" ]]; then
     for t in gh; do
       (( $+commands[$t] )) && _dot_ok "$t" || _dot_bad "$t not found (brew bundle --file=$DOTFILES/Brewfile.home)"
     done
+  elif [[ "$profile" == "work" ]]; then
+    for t in glab; do
+      (( $+commands[$t] )) && _dot_ok "$t" || _dot_bad "$t not found (brew bundle --file=$DOTFILES/Brewfile.work)"
+    done
+    [[ -d /Applications/MeetingBar.app ]] && _dot_ok "MeetingBar" \
+      || _dot_bad "MeetingBar not found (brew bundle --file=$DOTFILES/Brewfile.work)"
   fi
   [[ -d "${HOME}/.local/share/zinit/zinit.git" ]] && _dot_ok "zinit" || _dot_bad "zinit missing (dot install)"
 
   echo "Links"
   local link target
   for link in .zshrc .zsh/aliases.zsh .zsh/dot.zsh .gitconfig .config/starship.toml \
-              .config/zed/settings.json .gnupg/gpg-agent.conf; do
+              .config/zed/settings.json .config/atuin/config.toml .gnupg/gpg-agent.conf; do
     target="${HOME}/${link}"
     if [[ -L "$target" && "$(readlink "$target")" == "$DOTFILES/"* ]]; then
       _dot_ok "~/$link"
