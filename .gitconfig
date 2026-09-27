@@ -50,8 +50,7 @@
 	enabled = true
 	autoupdate = true
 
-[commit]
-	gpgsign = true
+# commit.gpgsign is set in ~/.gitlocal only when a valid GPG key exists (scripts/git-signing.sh)
 
 [gpg]
 	program = gpg

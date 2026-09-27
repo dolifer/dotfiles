@@ -27,7 +27,7 @@ This will install Xcode CLT (if needed), clone the repo, install Homebrew + pack
 dot update     # pull latest, re-run install, restart zsh (refuses if the repo has local changes)
 dot edit       # open the repo in $EDITOR (Zed by default); dot edit .zshrc for one file
 dot status     # what you've changed; dot diff to see it
-dot doctor     # check tools, links, git identity and signing key
+dot doctor     # check tools, links, git identity; re-checks the signing key
 dot cd         # jump into the repo
 ```
 
@@ -36,6 +36,8 @@ dot cd         # jump into the repo
 ## Machine-local settings
 
 Put anything that shouldn't be committed (work env vars, tokens, `PJ_*` overrides) in `~/.zshrc.local`. It is sourced before the aliases and never touched by install. Git identity and signing key live in `~/.gitlocal` the same way.
+
+Commits are signed only when a usable GPG key is present: its secret key is in the keyring, it isn't expired or revoked, and it can sign. `install`, `dot update` and `dot doctor` check this and set `commit.gpgsign` in `~/.gitlocal` on or off to match (picking the first usable key if `user.signingkey` is empty), so a machine without a key, or one whose key expired, still commits unsigned instead of failing.
 
 ## Manual install
 

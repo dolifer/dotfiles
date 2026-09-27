@@ -243,6 +243,17 @@ setup_macos() {
   track "🍎" "macOS defaults — applied"
 }
 
+# --- Git commit signing ---
+# Signs commits only when a valid GPG key with a secret part is in the keyring
+setup_signing() {
+  local status
+  if status=$(bash "$DOTFILES/scripts/git-signing.sh"); then
+    ok "Commit ${status}"
+  else
+    info "Commit ${status}"
+  fi
+}
+
 # --- Git local identity ---
 setup_gitlocal() {
   step "🔑 Git identity"
@@ -252,17 +263,7 @@ setup_gitlocal() {
     local email=$(git config --file "$HOME/.gitlocal" user.email 2>/dev/null || echo "")
     ok "${name} <${email}>"
 
-    # Auto-detect GPG signing key if not set
-    local current_key=$(git config --file "$HOME/.gitlocal" user.signingkey 2>/dev/null || echo "")
-    if [[ -z "$current_key" ]] && _exists gpg; then
-      local gpg_key=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | awk '/^sec/{print $2}' | cut -d/ -f2 | head -1)
-      if [[ -n "$gpg_key" ]]; then
-        git config --file "$HOME/.gitlocal" user.signingkey "$gpg_key"
-        ok "GPG signing key → ${gpg_key}"
-      fi
-    elif [[ -n "$current_key" ]]; then
-      ok "GPG signing key → ${current_key}"
-    fi
+    setup_signing
 
     track "🔑" "Git identity — ${name}"
     return
@@ -279,6 +280,7 @@ setup_gitlocal() {
 EOF
 
   ok "Created ~/.gitlocal"
+  setup_signing
   track "🔑" "Git identity — created"
 }
 
