@@ -6,9 +6,6 @@ _exists() {
 # Quick reload of zsh environment
 alias reload="source $HOME/.zshrc"
 
-# Pull latest dotfiles and re-sync everything
-alias update='git -C $HOME/.dotfiles fetch origin && git -C $HOME/.dotfiles reset --hard origin/main && $HOME/.dotfiles/install.sh'
-
 # Folders Shortcuts
 [ -d ~/Downloads ]            && alias dl='cd ~/Downloads'
 [ -d ~/Desktop ]              && alias dt='cd ~/Desktop'

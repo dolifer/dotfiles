@@ -42,6 +42,11 @@ track() {
   RESULTS+=("${emoji} ${label}")
 }
 
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "These dotfiles are macOS-only." >&2
+  exit 1
+fi
+
 # Resolve script directory
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -63,24 +68,30 @@ EOF
   echo
 }
 
-# --- Sync a config file: backup existing, copy new ---
-sync_file() {
+# --- Link a config file into the repo: back up a real file, then symlink ---
+link_file() {
   local src="$1" dest="$2"
-  local name="$(basename "$dest")"
+  local name="${dest#"$HOME"/}"
   mkdir -p "$(dirname "$dest")"
 
-  if [[ -f "$dest" ]]; then
-    if diff -q "$src" "$dest" &>/dev/null; then
-      ok "${name} ${DIM}(unchanged)${RESET}"
-      return
-    fi
-    cp "$dest" "${dest}.bak"
-    warn "${name} ${DIM}(updated, backup → .bak)${RESET}"
-  else
-    ok "${name} ${DIM}(new)${RESET}"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    ok "${name} ${DIM}(linked)${RESET}"
+    return
   fi
 
-  cp -f "$src" "$dest"
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    if [[ -f "$dest" && ! -L "$dest" ]] && ! diff -q "$src" "$dest" &>/dev/null; then
+      cp "$dest" "${dest}.bak"
+      warn "${name} ${DIM}(linked, old version → .bak)${RESET}"
+    else
+      ok "${name} ${DIM}(linked)${RESET}"
+    fi
+    rm -f "$dest"
+  else
+    ok "${name} ${DIM}(new link)${RESET}"
+  fi
+
+  ln -s "$src" "$dest"
 }
 
 # --- Homebrew ---
@@ -116,14 +127,8 @@ install_homebrew() {
 install_software() {
   step "📦 Packages (Brewfile)"
 
-  if [[ "$(uname)" != "Darwin" ]]; then
-    skip "Not macOS"
-    track "⏭️" "Packages — not macOS"
-    return
-  fi
-
   if _exists brew; then
-    brew bundle --file="$DOTFILES/Brewfile" --no-lock 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
+    brew bundle --file="$DOTFILES/Brewfile" 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
     ok "Brew bundle complete"
     track "📦" "Packages — synced"
   else
@@ -144,8 +149,8 @@ install_zinit() {
 sync_ssh_config() {
   local src="$DOTFILES/.ssh/config"
   local dest="$HOME/.ssh/config"
-  mkdir -p "$HOME/.ssh"
-  chmod 700 "$HOME/.ssh"
+  mkdir -p "$HOME/.ssh/sockets"
+  chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets"
 
   if [[ ! -f "$dest" ]]; then
     cp "$src" "$dest"
@@ -162,9 +167,12 @@ sync_ssh_config() {
 
   local changed=false
 
-  # Ensure Host * block has our keys
-  for directive in "AddKeysToAgent yes" "UseKeychain yes" "IdentitiesOnly yes"; do
-    if ! grep -qF "$directive" "$dest"; then
+  # Ensure Host * block has our settings (skip any key already set, whatever its value)
+  local directive
+  for directive in "AddKeysToAgent yes" "UseKeychain yes" "IdentitiesOnly yes" \
+                   "ServerAliveInterval 60" "ServerAliveCountMax 3" \
+                   "ControlMaster auto" "ControlPath ~/.ssh/sockets/%C" "ControlPersist 10m"; do
+    if ! grep -qiE "^[[:space:]]*${directive%% *}[[:space:]]" "$dest"; then
       # Append to Host * block or create one
       if grep -q "^Host \*" "$dest"; then
         sed -i '' "/^Host \*/a\\
@@ -201,31 +209,24 @@ sync_configs() {
   step "🔗 Config files"
 
   sync_ssh_config
-  sync_file "$DOTFILES/.zshrc"                "$HOME/.zshrc"
-  sync_file "$DOTFILES/.zsh/aliases.zsh"      "$HOME/.zsh/aliases.zsh"
-  sync_file "$DOTFILES/.gitconfig"            "$HOME/.gitconfig"
-  sync_file "$DOTFILES/.curlrc"               "$HOME/.curlrc"
-  sync_file "$DOTFILES/.config/starship.toml" "$HOME/.config/starship.toml"
-  sync_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
-
-  # ghostty (macOS uses ~/Library path, Linux uses ~/.config)
-  if [[ "$(uname)" == "Darwin" ]]; then
-    local ghostty_dir="$HOME/Library/Application Support/com.mitchellh.ghostty"
-  else
-    local ghostty_dir="$HOME/.config/ghostty"
-  fi
-  sync_file "$DOTFILES/.config/ghostty/config" "$ghostty_dir/config"
+  link_file "$DOTFILES/.zshrc"                    "$HOME/.zshrc"
+  link_file "$DOTFILES/.zsh/aliases.zsh"          "$HOME/.zsh/aliases.zsh"
+  link_file "$DOTFILES/.zsh/dot.zsh"              "$HOME/.zsh/dot.zsh"
+  link_file "$DOTFILES/.gitconfig"                "$HOME/.gitconfig"
+  link_file "$DOTFILES/.curlrc"                   "$HOME/.curlrc"
+  link_file "$DOTFILES/.config/starship.toml"     "$HOME/.config/starship.toml"
+  link_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
+  link_file "$DOTFILES/.config/ghostty/config"    "$HOME/Library/Application Support/com.mitchellh.ghostty/config"
 
   # GPG agent (pinentry-mac)
-  sync_file "$DOTFILES/.gnupg/gpg-agent.conf" "$HOME/.gnupg/gpg-agent.conf"
+  link_file "$DOTFILES/.gnupg/gpg-agent.conf"     "$HOME/.gnupg/gpg-agent.conf"
   chmod 700 "$HOME/.gnupg" 2>/dev/null
   gpgconf --kill gpg-agent 2>/dev/null || true
 
   # k8s prompt helper
   mkdir -p "$HOME/.local/bin"
-  cp -f "$DOTFILES/scripts/k8s-prompt.sh" "$HOME/.local/bin/k8s-prompt"
-  chmod +x "$HOME/.local/bin/k8s-prompt"
-  ok "k8s-prompt ${DIM}(installed)${RESET}"
+  chmod +x "$DOTFILES/scripts/k8s-prompt.sh"
+  link_file "$DOTFILES/scripts/k8s-prompt.sh"     "$HOME/.local/bin/k8s-prompt"
 
   # flush caches
   rm -rf "$HOME/.cache/zsh-init" "$HOME/.zcompdump"*
@@ -236,11 +237,6 @@ sync_configs() {
 
 # --- macOS defaults ---
 setup_macos() {
-  if [[ "$(uname)" != "Darwin" ]]; then
-    track "⏭️" "macOS — not macOS"
-    return
-  fi
-
   step "🍎 macOS defaults"
   bash "$DOTFILES/scripts/macos.sh" 2>/dev/null | indent
   ok "Applied"
@@ -300,7 +296,7 @@ print_summary() {
     echo -e "    ${r}"
   done
   echo
-  echo -e "  ${CYAN}${BOLD}→ Open a new terminal to apply changes${RESET}"
+  echo -e "  ${CYAN}${BOLD}→ Open a new terminal to apply changes, then run: dot doctor${RESET}"
   echo
 }
 

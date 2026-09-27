@@ -6,6 +6,27 @@ export LANGUAGE=en_US.UTF-8
 # Don't print '%' for partial lines (e.g. curl output without trailing newline)
 unsetopt PROMPT_SP
 
+# --- Cached eval helper ---
+# Caches the output of an init command for 24h. Skipped if the command isn't installed.
+_cached_eval() {
+  local name=$1; shift
+  local cmd=${1%% *}
+  [[ -x $cmd ]] || (( $+commands[$cmd] )) || return
+  local cache="${HOME}/.cache/zsh-init/${name}.zsh"
+  if [[ ! -s "$cache" || -n "$cache"(#qN.mh+24) ]]; then
+    mkdir -p "${cache:h}"
+    eval "$@" > "$cache" 2>/dev/null
+  fi
+  source "$cache"
+}
+
+# --- Homebrew (Apple Silicon or Intel) ---
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  _cached_eval brew '/opt/homebrew/bin/brew shellenv'
+elif [[ -x /usr/local/bin/brew ]]; then
+  _cached_eval brew '/usr/local/bin/brew shellenv'
+fi
+
 # --- PATH ---
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -34,11 +55,6 @@ zinit wait lucid for \
   OMZP::docker \
   OMZP::docker-compose
 
-# --- ssh-agent: Linux only (macOS uses built-in Keychain via ~/.ssh/config) ---
-if [[ "$OSTYPE" == linux* ]]; then
-  zinit snippet OMZP::ssh-agent
-fi
-
 # --- Custom plugins (turbo) ---
 zinit wait lucid blockf for \
   zsh-users/zsh-completions
@@ -63,24 +79,32 @@ else
 fi
 zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 
-# --- Cached eval helper ---
-_cached_eval() {
-  local name=$1; shift
-  local cache="${HOME}/.cache/zsh-init/${name}.zsh"
-  if [[ ! -f "$cache" || -n "$cache"(#qN.mh+24) ]]; then
-    mkdir -p "${cache:h}"
-    eval "$@" > "$cache" 2>/dev/null
-  fi
-  source "$cache"
-}
-
 # --- Tool inits (cached) ---
 _cached_eval starship  'starship init zsh --print-full-init'
 _cached_eval zoxide   'zoxide init zsh'
 
-# --- fzf keybindings + completion ---
-[[ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ]] && source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
-[[ -f /opt/homebrew/opt/fzf/shell/completion.zsh ]]    && source /opt/homebrew/opt/fzf/shell/completion.zsh
+# --- fzf keybindings + completion (Ctrl-T files, Ctrl-R history, Alt-C dirs) ---
+_cached_eval fzf 'fzf --zsh'
+if (( $+commands[fd] )); then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+fi
+(( $+commands[bat] )) && export FZF_CTRL_T_OPTS="--preview 'bat --color=always --style=numbers --line-range=:200 {}'"
+(( $+commands[eza] )) && export FZF_ALT_C_OPTS="--preview 'eza -1 --color=always --icons {}'"
+
+# --- fzf-tab: group switching and previews ---
+zstyle ':completion:*:descriptions' format '[%d]'
+zstyle ':completion:*' menu no
+zstyle ':fzf-tab:*' switch-group '<' '>'
+zstyle ':fzf-tab:complete:(cd|z|__zoxide_z):*' fzf-preview \
+  'eza -1 --color=always --icons $realpath 2>/dev/null'
+zstyle ':fzf-tab:complete:(ls|eza|cat|bat|less|zed|vim|nvim|code|open|rm|cp|mv):*' fzf-preview \
+  '[[ -d $realpath ]] && eza -1 --color=always --icons $realpath || bat --color=always --style=numbers --line-range=:200 $realpath 2>/dev/null'
+
+# --- Machine-local overrides (untracked: secrets, work env, PJ_* settings) ---
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
 # --- Aliases & functions ---
 source ~/.zsh/aliases.zsh
+source ~/.zsh/dot.zsh
