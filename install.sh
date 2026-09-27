@@ -133,14 +133,37 @@ install_homebrew() {
   track "🍺" "Homebrew — installed"
 }
 
+# --- Machine profile: home or work (asked once, kept in ~/.config/dotfiles/profile) ---
+PROFILE_FILE="$HOME/.config/dotfiles/profile"
+PROFILE=""
+
+load_profile() {
+  [[ -f "$PROFILE_FILE" ]] && PROFILE="$(tr -d '[:space:]' < "$PROFILE_FILE")"
+  if [[ "$PROFILE" != "home" && "$PROFILE" != "work" ]]; then
+    read -p "  Is this a work machine? [y/N] " -n 1 answer || answer=""
+    echo
+    [[ "$answer" == "y" ]] && PROFILE="work" || PROFILE="home"
+    mkdir -p "$(dirname "$PROFILE_FILE")"
+    echo "$PROFILE" > "$PROFILE_FILE"
+  fi
+  ok "Profile: ${PROFILE} ${DIM}(~/.config/dotfiles/profile)${RESET}"
+}
+
 # --- Brew bundle ---
+bundle() {
+  brew bundle --file="$1" 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
+}
+
 install_software() {
   step "📦 Packages (Brewfile)"
 
+  load_profile
   if _exists brew; then
-    brew bundle --file="$DOTFILES/Brewfile" 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
+    bundle "$DOTFILES/Brewfile"
+    [[ "$PROFILE" == "home" ]] && bundle "$DOTFILES/Brewfile.home"
+    [[ "$PROFILE" == "work" ]] && bundle "$DOTFILES/Brewfile.work"
     ok "Brew bundle complete"
-    track "📦" "Packages — synced"
+    track "📦" "Packages — synced (${PROFILE})"
   else
     fail "Homebrew not available"
     track "❌" "Packages — Homebrew missing"
@@ -225,6 +248,7 @@ sync_configs() {
   link_file "$DOTFILES/.gitconfig"                "$HOME/.gitconfig"
   link_file "$DOTFILES/.config/starship.toml"     "$HOME/.config/starship.toml"
   link_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
+  link_file "$DOTFILES/.config/atuin/config.toml" "$HOME/.config/atuin/config.toml"
   link_file "$DOTFILES/.config/ghostty/config"    "$HOME/Library/Application Support/com.mitchellh.ghostty/config"
 
   # No longer managed: its curl defaults broke scripts that expect stock curl

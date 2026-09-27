@@ -105,6 +105,14 @@ fi
 (( $+commands[bat] )) && export FZF_CTRL_T_OPTS="--preview 'bat --color=always --style=numbers --line-range=:200 {}'"
 (( $+commands[eza] )) && export FZF_ALT_C_OPTS="--preview 'eza -1 --color=always --icons {}'"
 
+# --- atuin: history database (dir, exit code, duration, optional sync), searched with Ctrl-G.
+# Ctrl-R and Up keep their fzf / substring-search behaviour, and `?` stays a plain `?`
+# (no Atuin AI). Not loaded in agent shells, so their commands stay out of the history.
+if [[ -o interactive && -z "$CLAUDECODE$CURSOR_AGENT$CODEX_SANDBOX" ]] && (( $+commands[atuin] )); then
+  _cached_eval atuin 'atuin init zsh --disable-up-arrow --disable-ctrl-r --disable-ai'
+  bindkey '^g' atuin-search
+fi
+
 # --- fzf-tab: group switching and previews ---
 zstyle ':completion:*:descriptions' format '[%d]'
 zstyle ':completion:*' menu no

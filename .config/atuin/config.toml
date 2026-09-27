@@ -1,0 +1,24 @@
+# atuin: shell history in a SQLite database, with directory, exit code and duration.
+# Ctrl-R stays on fzf; atuin search is on Ctrl-G (see .zshrc).
+# Full reference: https://docs.atuin.sh/configuration/config/
+
+# Don't phone home for new versions; brew handles updates.
+update_check = false
+
+# fzf-like matching, newest-first ranking, same feel as Ctrl-R.
+search_mode = "fuzzy"
+filter_mode = "global"
+
+# Ctrl-R inside the search cycles global → host → session → directory,
+# plus "workspace" (the current git repo) when inside one.
+workspaces = true
+
+# Compact list under the prompt instead of a full-screen UI.
+style = "compact"
+inline_height = 20
+show_preview = true
+
+# Enter puts the command on the line to edit (like fzf); Tab does the same.
+enter_accept = false
+
+# Sync is off until you run `atuin register` / `atuin login` on a machine.
