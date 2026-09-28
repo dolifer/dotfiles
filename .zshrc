@@ -133,7 +133,11 @@ zstyle ':fzf-tab:complete:(cd|z|__zoxide_z):*' fzf-preview \
 zstyle ':fzf-tab:complete:(ls|eza|cat|bat|less|zed|vim|nvim|code|open|rm|cp|mv):*' fzf-preview \
   '[[ -d $realpath ]] && eza -1 --color=always --icons $realpath || bat --color=always --style=numbers --line-range=:200 $realpath 2>/dev/null'
 
-# --- Machine-local overrides (untracked: secrets, work env, PJ_* settings) ---
+# --- Profile settings (tracked: .zsh/home.zsh or .zsh/work.zsh, per ~/.config/dotfiles/profile) ---
+[[ -f ~/.config/dotfiles/profile ]] && DOTFILES_PROFILE=${"$(<~/.config/dotfiles/profile)"//[[:space:]]/}
+[[ -n $DOTFILES_PROFILE && -f ~/.zsh/$DOTFILES_PROFILE.zsh ]] && source ~/.zsh/$DOTFILES_PROFILE.zsh
+
+# --- Machine-local overrides (untracked: secrets, tokens; wins over the profile file) ---
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
 # --- Aliases & functions ---

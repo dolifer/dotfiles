@@ -245,6 +245,8 @@ sync_configs() {
   link_file "$DOTFILES/.zshrc"                    "$HOME/.zshrc"
   link_file "$DOTFILES/.zsh/aliases.zsh"          "$HOME/.zsh/aliases.zsh"
   link_file "$DOTFILES/.zsh/dot.zsh"              "$HOME/.zsh/dot.zsh"
+  link_file "$DOTFILES/.zsh/home.zsh"             "$HOME/.zsh/home.zsh"
+  link_file "$DOTFILES/.zsh/work.zsh"             "$HOME/.zsh/work.zsh"
   link_file "$DOTFILES/.gitconfig"                "$HOME/.gitconfig"
   link_file "$DOTFILES/.config/starship.toml"     "$HOME/.config/starship.toml"
   link_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
