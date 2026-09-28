@@ -47,3 +47,8 @@
 # # which is explained in the docs for that config option.
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
+
+# Linux remotes don't know Ghostty's TERM (xterm-ghostty), which breaks backspace,
+# clear and colors over ssh. Install its terminfo on first connect, or fall back to
+# xterm-256color, and forward COLORTERM etc.
+shell-integration-features = ssh-terminfo,ssh-env

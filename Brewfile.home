@@ -1,0 +1,4 @@
+# Homebrew Bundle — home profile only (see ~/.config/dotfiles/profile)
+# Work machines skip this file.
+
+brew "gh"

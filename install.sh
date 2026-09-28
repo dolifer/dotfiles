@@ -42,6 +42,11 @@ track() {
   RESULTS+=("${emoji} ${label}")
 }
 
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "These dotfiles are macOS-only." >&2
+  exit 1
+fi
+
 # Resolve script directory
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -63,24 +68,40 @@ EOF
   echo
 }
 
-# --- Sync a config file: backup existing, copy new ---
-sync_file() {
+# --- Link a config file into the repo: back up a real file, then symlink ---
+link_file() {
   local src="$1" dest="$2"
-  local name="$(basename "$dest")"
+  local name="${dest#"$HOME"/}"
   mkdir -p "$(dirname "$dest")"
 
-  if [[ -f "$dest" ]]; then
-    if diff -q "$src" "$dest" &>/dev/null; then
-      ok "${name} ${DIM}(unchanged)${RESET}"
-      return
-    fi
-    cp "$dest" "${dest}.bak"
-    warn "${name} ${DIM}(updated, backup → .bak)${RESET}"
-  else
-    ok "${name} ${DIM}(new)${RESET}"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    ok "${name} ${DIM}(linked)${RESET}"
+    return
   fi
 
-  cp -f "$src" "$dest"
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    if [[ -f "$dest" && ! -L "$dest" ]] && ! diff -q "$src" "$dest" &>/dev/null; then
+      cp "$dest" "${dest}.bak"
+      warn "${name} ${DIM}(linked, old version → .bak)${RESET}"
+    else
+      ok "${name} ${DIM}(linked)${RESET}"
+    fi
+    rm -f "$dest"
+  else
+    ok "${name} ${DIM}(new link)${RESET}"
+  fi
+
+  ln -s "$src" "$dest"
+}
+
+# --- Remove a link to a config the repo no longer ships (leaves real files alone) ---
+unlink_file() {
+  local dest="$1"
+  local name="${dest#"$HOME"/}"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$DOTFILES/"* ]]; then
+    rm -f "$dest"
+    ok "${name} ${DIM}(old link removed)${RESET}"
+  fi
 }
 
 # --- Homebrew ---
@@ -112,20 +133,37 @@ install_homebrew() {
   track "🍺" "Homebrew — installed"
 }
 
+# --- Machine profile: home or work (asked once, kept in ~/.config/dotfiles/profile) ---
+PROFILE_FILE="$HOME/.config/dotfiles/profile"
+PROFILE=""
+
+load_profile() {
+  [[ -f "$PROFILE_FILE" ]] && PROFILE="$(tr -d '[:space:]' < "$PROFILE_FILE")"
+  if [[ "$PROFILE" != "home" && "$PROFILE" != "work" ]]; then
+    read -p "  Is this a work machine? [y/N] " -n 1 answer || answer=""
+    echo
+    [[ "$answer" == "y" ]] && PROFILE="work" || PROFILE="home"
+    mkdir -p "$(dirname "$PROFILE_FILE")"
+    echo "$PROFILE" > "$PROFILE_FILE"
+  fi
+  ok "Profile: ${PROFILE} ${DIM}(~/.config/dotfiles/profile)${RESET}"
+}
+
 # --- Brew bundle ---
+bundle() {
+  brew bundle --file="$1" 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
+}
+
 install_software() {
   step "📦 Packages (Brewfile)"
 
-  if [[ "$(uname)" != "Darwin" ]]; then
-    skip "Not macOS"
-    track "⏭️" "Packages — not macOS"
-    return
-  fi
-
+  load_profile
   if _exists brew; then
-    brew bundle --file="$DOTFILES/Brewfile" --no-lock 2>&1 | grep -E '^(Installing|Upgrading|Using)' | indent || true
+    bundle "$DOTFILES/Brewfile"
+    [[ "$PROFILE" == "home" ]] && bundle "$DOTFILES/Brewfile.home"
+    [[ "$PROFILE" == "work" ]] && bundle "$DOTFILES/Brewfile.work"
     ok "Brew bundle complete"
-    track "📦" "Packages — synced"
+    track "📦" "Packages — synced (${PROFILE})"
   else
     fail "Homebrew not available"
     track "❌" "Packages — Homebrew missing"
@@ -144,8 +182,8 @@ install_zinit() {
 sync_ssh_config() {
   local src="$DOTFILES/.ssh/config"
   local dest="$HOME/.ssh/config"
-  mkdir -p "$HOME/.ssh"
-  chmod 700 "$HOME/.ssh"
+  mkdir -p "$HOME/.ssh/sockets"
+  chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets"
 
   if [[ ! -f "$dest" ]]; then
     cp "$src" "$dest"
@@ -162,9 +200,12 @@ sync_ssh_config() {
 
   local changed=false
 
-  # Ensure Host * block has our keys
-  for directive in "AddKeysToAgent yes" "UseKeychain yes" "IdentitiesOnly yes"; do
-    if ! grep -qF "$directive" "$dest"; then
+  # Ensure Host * block has our settings (skip any key already set, whatever its value)
+  local directive
+  for directive in "AddKeysToAgent yes" "UseKeychain yes" "IdentitiesOnly yes" \
+                   "ServerAliveInterval 60" "ServerAliveCountMax 3" \
+                   "ControlMaster auto" "ControlPath ~/.ssh/sockets/%C" "ControlPersist 10m"; do
+    if ! grep -qiE "^[[:space:]]*${directive%% *}[[:space:]]" "$dest"; then
       # Append to Host * block or create one
       if grep -q "^Host \*" "$dest"; then
         sed -i '' "/^Host \*/a\\
@@ -201,31 +242,27 @@ sync_configs() {
   step "🔗 Config files"
 
   sync_ssh_config
-  sync_file "$DOTFILES/.zshrc"                "$HOME/.zshrc"
-  sync_file "$DOTFILES/.zsh/aliases.zsh"      "$HOME/.zsh/aliases.zsh"
-  sync_file "$DOTFILES/.gitconfig"            "$HOME/.gitconfig"
-  sync_file "$DOTFILES/.curlrc"               "$HOME/.curlrc"
-  sync_file "$DOTFILES/.config/starship.toml" "$HOME/.config/starship.toml"
-  sync_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
+  link_file "$DOTFILES/.zshrc"                    "$HOME/.zshrc"
+  link_file "$DOTFILES/.zsh/aliases.zsh"          "$HOME/.zsh/aliases.zsh"
+  link_file "$DOTFILES/.zsh/dot.zsh"              "$HOME/.zsh/dot.zsh"
+  link_file "$DOTFILES/.gitconfig"                "$HOME/.gitconfig"
+  link_file "$DOTFILES/.config/starship.toml"     "$HOME/.config/starship.toml"
+  link_file "$DOTFILES/.config/zed/settings.json" "$HOME/.config/zed/settings.json"
+  link_file "$DOTFILES/.config/atuin/config.toml" "$HOME/.config/atuin/config.toml"
+  link_file "$DOTFILES/.config/ghostty/config"    "$HOME/Library/Application Support/com.mitchellh.ghostty/config"
 
-  # ghostty (macOS uses ~/Library path, Linux uses ~/.config)
-  if [[ "$(uname)" == "Darwin" ]]; then
-    local ghostty_dir="$HOME/Library/Application Support/com.mitchellh.ghostty"
-  else
-    local ghostty_dir="$HOME/.config/ghostty"
-  fi
-  sync_file "$DOTFILES/.config/ghostty/config" "$ghostty_dir/config"
+  # No longer managed: its curl defaults broke scripts that expect stock curl
+  unlink_file "$HOME/.curlrc"
 
   # GPG agent (pinentry-mac)
-  sync_file "$DOTFILES/.gnupg/gpg-agent.conf" "$HOME/.gnupg/gpg-agent.conf"
+  link_file "$DOTFILES/.gnupg/gpg-agent.conf"     "$HOME/.gnupg/gpg-agent.conf"
   chmod 700 "$HOME/.gnupg" 2>/dev/null
   gpgconf --kill gpg-agent 2>/dev/null || true
 
   # k8s prompt helper
   mkdir -p "$HOME/.local/bin"
-  cp -f "$DOTFILES/scripts/k8s-prompt.sh" "$HOME/.local/bin/k8s-prompt"
-  chmod +x "$HOME/.local/bin/k8s-prompt"
-  ok "k8s-prompt ${DIM}(installed)${RESET}"
+  chmod +x "$DOTFILES/scripts/k8s-prompt.sh"
+  link_file "$DOTFILES/scripts/k8s-prompt.sh"     "$HOME/.local/bin/k8s-prompt"
 
   # flush caches
   rm -rf "$HOME/.cache/zsh-init" "$HOME/.zcompdump"*
@@ -236,15 +273,21 @@ sync_configs() {
 
 # --- macOS defaults ---
 setup_macos() {
-  if [[ "$(uname)" != "Darwin" ]]; then
-    track "⏭️" "macOS — not macOS"
-    return
-  fi
-
   step "🍎 macOS defaults"
   bash "$DOTFILES/scripts/macos.sh" 2>/dev/null | indent
   ok "Applied"
   track "🍎" "macOS defaults — applied"
+}
+
+# --- Git commit signing ---
+# Signs commits only when a valid GPG key with a secret part is in the keyring
+setup_signing() {
+  local status
+  if status=$(bash "$DOTFILES/scripts/git-signing.sh"); then
+    ok "Commit ${status}"
+  else
+    info "Commit ${status}"
+  fi
 }
 
 # --- Git local identity ---
@@ -256,17 +299,7 @@ setup_gitlocal() {
     local email=$(git config --file "$HOME/.gitlocal" user.email 2>/dev/null || echo "")
     ok "${name} <${email}>"
 
-    # Auto-detect GPG signing key if not set
-    local current_key=$(git config --file "$HOME/.gitlocal" user.signingkey 2>/dev/null || echo "")
-    if [[ -z "$current_key" ]] && _exists gpg; then
-      local gpg_key=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | awk '/^sec/{print $2}' | cut -d/ -f2 | head -1)
-      if [[ -n "$gpg_key" ]]; then
-        git config --file "$HOME/.gitlocal" user.signingkey "$gpg_key"
-        ok "GPG signing key → ${gpg_key}"
-      fi
-    elif [[ -n "$current_key" ]]; then
-      ok "GPG signing key → ${current_key}"
-    fi
+    setup_signing
 
     track "🔑" "Git identity — ${name}"
     return
@@ -283,6 +316,7 @@ setup_gitlocal() {
 EOF
 
   ok "Created ~/.gitlocal"
+  setup_signing
   track "🔑" "Git identity — created"
 }
 
@@ -300,7 +334,7 @@ print_summary() {
     echo -e "    ${r}"
   done
   echo
-  echo -e "  ${CYAN}${BOLD}→ Open a new terminal to apply changes${RESET}"
+  echo -e "  ${CYAN}${BOLD}→ Open a new terminal to apply changes, then run: dot doctor${RESET}"
   echo
 }
 

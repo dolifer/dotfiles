@@ -6,6 +6,27 @@ export LANGUAGE=en_US.UTF-8
 # Don't print '%' for partial lines (e.g. curl output without trailing newline)
 unsetopt PROMPT_SP
 
+# --- Cached eval helper ---
+# Caches the output of an init command for 24h. Skipped if the command isn't installed.
+_cached_eval() {
+  local name=$1; shift
+  local cmd=${1%% *}
+  [[ -x $cmd ]] || (( $+commands[$cmd] )) || return
+  local cache="${HOME}/.cache/zsh-init/${name}.zsh"
+  if [[ ! -s "$cache" || -n "$cache"(#qN.mh+24) ]]; then
+    mkdir -p "${cache:h}"
+    eval "$@" > "$cache" 2>/dev/null
+  fi
+  source "$cache"
+}
+
+# --- Homebrew (Apple Silicon or Intel) ---
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  _cached_eval brew '/opt/homebrew/bin/brew shellenv'
+elif [[ -x /usr/local/bin/brew ]]; then
+  _cached_eval brew '/usr/local/bin/brew shellenv'
+fi
+
 # --- PATH ---
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -34,11 +55,6 @@ zinit wait lucid for \
   OMZP::docker \
   OMZP::docker-compose
 
-# --- ssh-agent: Linux only (macOS uses built-in Keychain via ~/.ssh/config) ---
-if [[ "$OSTYPE" == linux* ]]; then
-  zinit snippet OMZP::ssh-agent
-fi
-
 # --- Custom plugins (turbo) ---
 zinit wait lucid blockf for \
   zsh-users/zsh-completions
@@ -63,24 +79,68 @@ else
 fi
 zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 
-# --- Cached eval helper ---
-_cached_eval() {
-  local name=$1; shift
-  local cache="${HOME}/.cache/zsh-init/${name}.zsh"
-  if [[ ! -f "$cache" || -n "$cache"(#qN.mh+24) ]]; then
-    mkdir -p "${cache:h}"
-    eval "$@" > "$cache" 2>/dev/null
-  fi
-  source "$cache"
-}
-
 # --- Tool inits (cached) ---
 _cached_eval starship  'starship init zsh --print-full-init'
-_cached_eval zoxide   'zoxide init zsh'
+# zoxide: `cd` ranks directories by frecency, `cdi` (or `cd foo<Space><Tab>`) picks one with fzf.
+# Agents (Claude Code, Cursor, Codex) snapshot shell functions into shells without the
+# chpwd hook, so they get the plain `z`/`zi` commands and keep the builtin cd.
+export _ZO_EXCLUDE_DIRS="$HOME:/tmp/*:/private/tmp/*:/private/var/*:/var/folders/*:/Volumes/*"
+(( $+commands[eza] )) && export _ZO_FZF_OPTS="--exact --no-sort --cycle --keep-right --height=45% \
+--layout=reverse --info=inline --border=sharp --select-1 --exit-0 \
+--preview='eza -1 --color=always --icons {2..}' --preview-window=down,30%,sharp"
+if [[ -o interactive && -z "$CLAUDECODE$CURSOR_AGENT$CODEX_SANDBOX" ]]; then
+  _cached_eval zoxide-cd 'zoxide init zsh --cmd cd'
+  alias z='cd' zi='cdi'
+else
+  _cached_eval zoxide 'zoxide init zsh'
+fi
 
-# --- fzf keybindings + completion ---
-[[ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ]] && source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
-[[ -f /opt/homebrew/opt/fzf/shell/completion.zsh ]]    && source /opt/homebrew/opt/fzf/shell/completion.zsh
+# --- fzf keybindings + completion (Ctrl-T files, Ctrl-R history, Alt-C dirs) ---
+_cached_eval fzf 'fzf --zsh'
+if (( $+commands[fd] )); then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+fi
+(( $+commands[bat] )) && export FZF_CTRL_T_OPTS="--preview 'bat --color=always --style=numbers --line-range=:200 {}'"
+(( $+commands[eza] )) && export FZF_ALT_C_OPTS="--preview 'eza -1 --color=always --icons {}'"
+
+# --- atuin: history database (dir, exit code, duration, optional sync), searched with Ctrl-G.
+# Ctrl-R and Up keep their fzf / substring-search behaviour, and `?` stays a plain `?`
+# (no Atuin AI). Not loaded in agent shells, so their commands stay out of the history.
+if [[ -o interactive && -z "$CLAUDECODE$CURSOR_AGENT$CODEX_SANDBOX" ]] && (( $+commands[atuin] )); then
+  _cached_eval atuin 'atuin init zsh --disable-up-arrow --disable-ctrl-r --disable-ai'
+  bindkey '^g' atuin-search
+fi
+
+# --- fzf-tab: group switching and previews ---
+zstyle ':completion:*:descriptions' format '[%d]'
+zstyle ':completion:*' menu no
+zstyle ':fzf-tab:*' switch-group '<' '>'
+zstyle ':fzf-tab:complete:(cd|z|__zoxide_z):*' fzf-preview \
+  'eza -1 --color=always --icons $realpath 2>/dev/null'
+zstyle ':fzf-tab:complete:(ls|eza|cat|bat|less|zed|vim|nvim|code|open|rm|cp|mv):*' fzf-preview \
+  '[[ -d $realpath ]] && eza -1 --color=always --icons $realpath || bat --color=always --style=numbers --line-range=:200 $realpath 2>/dev/null'
+
+# --- Machine-local overrides (untracked: secrets, work env, PJ_* settings) ---
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
 # --- Aliases & functions ---
 source ~/.zsh/aliases.zsh
+source ~/.zsh/dot.zsh
+
+# --- Seed zoxide with pj projects (only paths it doesn't know yet, once per reindex) ---
+_zoxide_seed_pj() {
+  local index=${PJ_INDEX_FILE:-$HOME/.cache/pj-index.tsv}
+  local stamp=$HOME/.cache/zsh-init/zoxide-pj.stamp
+  (( $+commands[zoxide] )) && [[ -s $index && ( ! -e $stamp || $index -nt $stamp ) ]] || return 0
+  local -a known new
+  known=(${(f)"$(zoxide query --list 2>/dev/null)"})
+  for dir in ${(f)"$(cut -f2 "$index")"}; do
+    [[ -d $dir ]] && (( ! ${known[(Ie)$dir]} )) && new+=($dir)
+  done
+  (( $#new )) && zoxide add -- $new
+  mkdir -p ${stamp:h} && touch $stamp
+}
+_zoxide_seed_pj
+unfunction _zoxide_seed_pj

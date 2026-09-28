@@ -6,9 +6,6 @@ _exists() {
 # Quick reload of zsh environment
 alias reload="source $HOME/.zshrc"
 
-# Pull latest dotfiles and re-sync everything
-alias update='git -C $HOME/.dotfiles fetch origin && git -C $HOME/.dotfiles reset --hard origin/main && $HOME/.dotfiles/install.sh'
-
 # Folders Shortcuts
 [ -d ~/Downloads ]            && alias dl='cd ~/Downloads'
 [ -d ~/Desktop ]              && alias dt='cd ~/Desktop'
@@ -24,10 +21,6 @@ if _exists eza; then
   alias la='ls -lAh'
 fi
 
-# cd with zsh-z capabilities
-# https://github.com/ajeetdsouza/zoxide
-# NOTE: alias is set after function definitions to avoid parse-time expansion
-unalias cd 2>/dev/null
 
 # --- Projects Index ---
 # Index file: ~/.cache/pj-index.tsv (tab-separated: short_name, full_path, remote_url)
@@ -780,12 +773,3 @@ _pj() {
 compdef _pj pj 2>/dev/null
 compdef _pj_link_complete pj-link 2>/dev/null
 compdef _pj_unlink_complete pj-unlink 2>/dev/null
-
-# cd with zsh-z capabilities (must be after function definitions)
-# https://github.com/ajeetdsouza/zoxide
-# Agents (Claude Code, Cursor, Codex) replay aliases in shells where zoxide's
-# chpwd hook isn't set up, so `z` prints its "configuration issue" warning or
-# fails on plain paths there. Keep the builtin cd for them.
-if [[ -o interactive && -z "$CLAUDECODE$CURSOR_AGENT$CODEX_SANDBOX" ]]; then
-  alias cd='z'
-fi

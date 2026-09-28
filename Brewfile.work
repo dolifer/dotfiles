@@ -1,0 +1,5 @@
+# Homebrew Bundle — work profile only (see ~/.config/dotfiles/profile)
+# Home machines skip this file.
+
+brew "glab"         # GitLab CLI: merge requests, pipelines, issues
+cask "meetingbar"   # next meeting in the menu bar, one click to join
