@@ -38,7 +38,7 @@ pj drop            # delete it instead (asks first)
 pj prune 30        # delete sandbox projects untouched for 30 days (asks first)
 ```
 
-The index rebuilds itself when it is a day old or a name is not found. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_SANDBOX`, `PJ_EDITOR` or `PJ_GIT_GUI` before `aliases.zsh` is sourced to change the defaults. The old `pj-*` commands still work.
+The index rebuilds itself when it is a day old or a name is not found. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_SANDBOX`, `PJ_EDITOR` or `PJ_GIT_GUI` in `~/.zshrc.local` to change the defaults.
 
 ## Quick bootstrap (fresh machine)
 
