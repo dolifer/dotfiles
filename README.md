@@ -140,7 +140,9 @@ xh -d https://example.com/file.zip                # download with a progress bar
 
 ## Machine-local settings
 
-Put anything that shouldn't be committed (work env vars, tokens, `PJ_*` overrides) in `~/.zshrc.local`. It is sourced before the aliases and never touched by install. Git identity and signing key live in `~/.gitlocal` the same way.
+Settings shared by every home or every work Mac go in the tracked profile files: [`.zsh/home.zsh`](./.zsh/home.zsh) or [`.zsh/work.zsh`](./.zsh/work.zsh). `.zshrc` sources the one matching `~/.config/dotfiles/profile` (set by install), and exposes it as `$DOTFILES_PROFILE`. Edit them with `dot edit .zsh/work.zsh`.
+
+Put anything that shouldn't be committed (tokens, secrets, one-off overrides) in `~/.zshrc.local`. It is sourced after the profile file, so it can override it, and before the aliases; install never touches it. Git identity and signing key live in `~/.gitlocal` the same way.
 
 Commits are signed only when a usable GPG key is present: its secret key is in the keyring, it isn't expired or revoked, and it can sign. `install`, `dot update` and `dot doctor` check this and set `commit.gpgsign` in `~/.gitlocal` on or off to match (picking the first usable key if `user.signingkey` is empty), so a machine without a key, or one whose key expired, still commits unsigned instead of failing.
 
