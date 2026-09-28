@@ -11,9 +11,36 @@ Features
 - Cached tool inits (brew, starship, zoxide, fzf) for fast startup
 - fzf with fd and bat previews, delta for git diffs
 - [zoxide](https://github.com/ajeetdsouza/zoxide) behind `cd`: `cd dot zsh` jumps by frecency, `cdi` (or `cd foo<Space><Tab>`) picks with fzf and an eza preview, `pj` projects are known before your first visit, and `zoxide edit` fixes scores
-- Useful [aliases](./.zsh/aliases.zsh) and project index (`pj` commands)
+- Useful [aliases](./.zsh/aliases.zsh) and a project jumper (`pj`, see below)
 - [atuin](https://atuin.sh) history database on Ctrl-G next to fzf's Ctrl-R, plus [small everyday tools](#everyday-tools) (tldr, btop, dust, xh)
 - Ghostty and Zed editor configs
+
+## Projects: `pj`
+
+`pj` indexes git repos under `~/projects` and jumps to them by name.
+
+```sh
+pj dotfiles        # cd into the repo (exact, prefix or substring match)
+pj dot             # several matches open an fzf picker
+pj                 # go to ~/projects and show the colored help
+pj pick            # choose from all projects with fzf
+pj dotfiles -e     # cd and open in Zed; -f opens Fork, -w the remote in the browser
+pj add <url> -g    # clone into ~/projects and cd in; every command prints next-step hints
+pj help            # all subcommands: add, link, unlink, ls, clean, index
+```
+
+Scratch work lives in `~/projects/sandbox`, which the index skips:
+
+```sh
+pj new api-spike   # git init a sandbox project and cd in (no name: scratch-<date>)
+pj new <git-url>   # or clone into the sandbox
+pj sb [name]       # go to the sandbox or one of its projects; pj sb ls lists them
+pj keep            # move the current sandbox project into ~/projects
+pj drop            # delete it instead (asks first)
+pj prune 30        # delete sandbox projects untouched for 30 days (asks first)
+```
+
+The index rebuilds itself when it is a day old or a name is not found. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_SANDBOX`, `PJ_EDITOR` or `PJ_GIT_GUI` in `~/.zshrc.local` to change the defaults.
 
 ## Quick bootstrap (fresh machine)
 
@@ -27,13 +54,12 @@ This will install Xcode CLT (if needed), clone the repo, install Homebrew + pack
 
 ```sh
 dot update     # pull latest, re-run install, restart zsh (refuses if the repo has local changes)
+dot reload     # restart zsh to pick up config changes
 dot edit       # open the repo in $EDITOR (Zed by default); dot edit .zshrc for one file
 dot status     # what you've changed; dot diff to see it
 dot doctor     # check tools, links, git identity; re-checks the signing key
 dot cd         # jump into the repo
 ```
-
-`update` still works as an alias for `dot update`.
 
 ## Home and work machines
 

@@ -32,6 +32,9 @@ dot() {
       git -C "$DOTFILES" pull --ff-only || return 1
       "$DOTFILES/install.sh" && exec zsh
       ;;
+    reload|rl)
+      exec zsh
+      ;;
     install)
       "$DOTFILES/install.sh"
       ;;
@@ -47,6 +50,7 @@ Usage: dot <command>
   status          git status of the repo
   diff [args]     git diff of the repo
   update          pull latest (refuses if the repo has local changes), re-run install, restart zsh
+  reload          restart zsh to pick up config changes
   install         re-run install.sh
   doctor          check that tools, links and git signing are set up
 EOF
@@ -130,6 +134,7 @@ _dot_complete() {
     'status:git status of the repo'
     'diff:git diff of the repo'
     'update:pull latest and re-run install'
+    'reload:restart zsh to pick up config changes'
     'install:re-run install.sh'
     'doctor:check the setup'
     'help:show usage'
@@ -137,6 +142,3 @@ _dot_complete() {
   _describe 'dot command' cmds
 }
 compdef _dot_complete dot 2>/dev/null
-
-# Kept for muscle memory
-alias update='dot update'
