@@ -22,8 +22,10 @@ Features
 ```sh
 pj dotfiles        # cd into the repo (exact, prefix or substring match)
 pj dot             # several matches open an fzf picker
-pj                 # pick from all projects
-pj dotfiles -e     # cd and open in Zed; -g opens Fork, -w the remote in the browser
+pj                 # go to ~/projects and show the colored help
+pj pick            # choose from all projects with fzf
+pj dotfiles -e     # cd and open in Zed; -f opens Fork, -w the remote in the browser
+pj add <url> -g    # clone into ~/projects and cd in; every command prints next-step hints
 pj help            # all subcommands: add, link, unlink, ls, clean, index
 ```
 
@@ -52,13 +54,12 @@ This will install Xcode CLT (if needed), clone the repo, install Homebrew + pack
 
 ```sh
 dot update     # pull latest, re-run install, restart zsh (refuses if the repo has local changes)
+dot reload     # restart zsh to pick up config changes
 dot edit       # open the repo in $EDITOR (Zed by default); dot edit .zshrc for one file
 dot status     # what you've changed; dot diff to see it
 dot doctor     # check tools, links, git identity; re-checks the signing key
 dot cd         # jump into the repo
 ```
-
-`update` still works as an alias for `dot update`.
 
 ## Home and work machines
 

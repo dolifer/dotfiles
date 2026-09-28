@@ -3,9 +3,6 @@ _exists() {
     command -v $1 > /dev/null 2>&1
 }
 
-# Quick reload of zsh environment
-alias reload="source $HOME/.zshrc"
-
 # Folders Shortcuts
 [ -d ~/Downloads ]            && alias dl='cd ~/Downloads'
 [ -d ~/Desktop ]              && alias dt='cd ~/Desktop'
@@ -30,10 +27,10 @@ PJ_INDEX_FILE="${HOME}/.cache/pj-index.tsv"
 : ${PJ_DEPTH:=1}               # how many levels below each root to look for repos
 : ${PJ_INDEX_TTL:=24}          # hours before the index is rebuilt automatically
 : ${PJ_EDITOR:=zed}            # pj <name> -e
-: ${PJ_GIT_GUI:=open -a Fork}  # pj <name> -g
+: ${PJ_GIT_GUI:=open -a Fork}  # pj <name> -f
 : ${PJ_SANDBOX:=${HOME}/projects/sandbox}  # pj new / sb / keep / drop / prune
 
-# The pj-* commands became pj subcommands; drop leftovers on `reload`
+# The pj-* commands became pj subcommands; drop leftovers on `dot reload`
 unfunction pj-index pj-add pj-link pj-unlink pj-list pj-clean 2>/dev/null
 zmodload zsh/datetime              # EPOCHSECONDS
 zmodload -F zsh/stat b:zstat
@@ -99,6 +96,11 @@ _pj_cmd_index() {
   mv -f "$tmpfile" "$PJ_INDEX_FILE"
   [[ -z "$quiet" ]] && echo "Index rebuilt: $(wc -l < "$PJ_INDEX_FILE" | tr -d ' ') projects"
   return 0
+}
+
+# Index name of the project at path $1 (empty if not indexed)
+_pj_name_of() {
+  awk -F'\t' -v p="$1" '$2 == p { print $1; exit }' "$PJ_INDEX_FILE" 2>/dev/null
 }
 
 # Rebuild the index quietly when it is missing or older than PJ_INDEX_TTL hours
@@ -178,7 +180,7 @@ _pj_parse() {
   for arg in "$@"; do
     case "$arg" in
       -e|--edit)  actions+=(edit) ;;
-      -g|--git)   actions+=(git) ;;
+      -f|--fork)  actions+=(git) ;;
       -w|--web)   actions+=(web) ;;
       -n|--no-cd) no_cd=1 ;;
       -*)         echo "pj: unknown flag '$arg' (see pj help)" >&2; return 1 ;;
@@ -227,36 +229,52 @@ _pj_web_url() {
     -e 's#^(https?)://[^@/]+@#\1://#'
 }
 
+# Colors for help and hints, only when printing to a terminal
+_pj_colors() {
+  if [[ -t 1 ]]; then
+    B=$'\e[1m' C=$'\e[36m' Y=$'\e[33m' D=$'\e[2m' R=$'\e[0m'
+  else
+    B= C= Y= D= R=
+  fi
+}
+
+# Print a "next step" hint: _pj_hint <command> <what it does>
+_pj_hint() {
+  local B C Y D R
+  _pj_colors
+  printf "  ${D}→${R} ${C}%s${R}  ${D}%s${R}\n" "$1" "$2"
+}
+
 _pj_help() {
-  cat <<'EOF'
-Usage:
-  pj                      pick a project with fzf and cd into it
-  pj <name> [flags]       cd into a project (exact, prefix or substring match)
-  pj cd <name> [flags]    same, for projects named like a subcommand
+  local B C Y D R
+  _pj_colors
+  local root="${PJ_ROOTS[1]/#$HOME/~}" sandbox="${PJ_SANDBOX/#$HOME/~}"
+  _pj_help_row() { printf "  ${C}%-28s${R} %s\n" "$1" "$2" }
 
-Flags (also work with new and sb):
-  -e, --edit    open the project in $PJ_EDITOR (zed)
-  -g, --git     open the project in $PJ_GIT_GUI (Fork)
-  -w, --web     open the project's remote in the browser
-  -n, --no-cd   stay in the current directory
-
-Subcommands:
-  pj add <git-url>            clone into the first root and reindex
-  pj link <name> [branch]     create a worktree here
-  pj unlink <folder>          remove a worktree here
-  pj ls                       list indexed projects
-  pj clean                    delete branches whose remote is gone
-  pj index [-q]               rebuild the index
-
-Sandbox ($PJ_SANDBOX):
-  pj new [name|git-url]       start a scratch project (git init or clone) and cd in
-  pj sb [name]                cd to the sandbox, or into one of its projects
-  pj sb ls                    list sandbox projects with age and git state
-  pj keep [name] [new-name]   move a sandbox project into ~/projects and index it
-  pj drop [name]              delete a sandbox project (asks first)
-  pj prune [days]             delete sandbox projects untouched for N days (30)
-  Without a name, keep and drop act on the sandbox project you are in.
-EOF
+  print -r -- "${B}Projects${R} ${D}${root}${R}"
+  _pj_help_row "pj <name> [flags]"       "jump to a project (exact, prefix or substring)"
+  _pj_help_row "pj pick"                 "choose a project with fzf"
+  _pj_help_row "pj ls"                   "list indexed projects"
+  _pj_help_row "pj add <git-url> [-g]"   "clone into ${root} (-g: cd into it)"
+  _pj_help_row "pj index"                "rebuild the index (runs by itself daily)"
+  _pj_help_row "pj clean"                "delete local branches whose remote is gone"
+  print
+  print -r -- "${B}Worktrees${R} ${D}in the current folder${R}"
+  _pj_help_row "pj link <name> [branch]" "check out a project here as a worktree"
+  _pj_help_row "pj unlink <folder>"      "remove that worktree"
+  print
+  print -r -- "${B}Sandbox${R} ${D}${sandbox}${R}"
+  _pj_help_row "pj new [name|git-url]"   "start a scratch project and cd into it"
+  _pj_help_row "pj sb [name]"            "go to the sandbox or one of its projects"
+  _pj_help_row "pj sb ls"                "list sandbox projects with age and state"
+  _pj_help_row "pj keep [name] [new]"    "move a sandbox project into ${root}"
+  _pj_help_row "pj drop [name]"          "delete a sandbox project (asks first)"
+  _pj_help_row "pj prune [days]"         "delete sandbox projects idle for N days (30)"
+  print
+  print -r -- "${B}Flags${R} ${D}for pj <name>, pj new and pj sb${R}"
+  printf "  ${Y}%-4s${R} %-22s ${Y}%-4s${R} %s\n" "-e" "open in ${PJ_EDITOR%% *}" "-f" "open in ${PJ_GIT_GUI##* }"
+  printf "  ${Y}%-4s${R} %-22s ${Y}%-4s${R} %s\n" "-w" "open remote in browser" "-n" "stay in this folder"
+  unfunction _pj_help_row
 }
 
 # Jump to a project, optionally opening it in the editor, git GUI or browser.
@@ -274,7 +292,9 @@ pj() {
     keep)         shift; _pj_cmd_keep "$@"; return ;;
     drop)         shift; _pj_cmd_drop "$@"; return ;;
     prune)        shift; _pj_cmd_prune "$@"; return ;;
+    pick)         shift; _pj_cmd_pick "$@"; return ;;
     help|-h|--help) _pj_help; return ;;
+    '')           builtin cd "${PJ_ROOTS[1]}" && _pj_help; return ;;
     cd)           shift ;;
   esac
 
@@ -282,16 +302,28 @@ pj() {
   local -a actions
   _pj_parse "$@" || return 1
 
-  if [[ -n "$query" ]]; then
-    hit=$(_pj_find "$query") || return 1
-  elif _exists fzf; then
-    _pj_ensure_index || return 1
-    hit=$(cut -f1,2 "$PJ_INDEX_FILE" | _pj_pick) || return 1
-  else
-    builtin cd "${PJ_ROOTS[1]}"
+  if [[ -z "$query" ]]; then
+    _pj_cmd_pick "$@"
     return
   fi
 
+  hit=$(_pj_find "$query") || return 1
+  _pj_go "${${hit#*$'\t'}%%$'\t'*}"
+}
+
+# Choose a project with fzf and jump to it
+# Usage: pj pick [flags]
+_pj_cmd_pick() {
+  local query no_cd hit
+  local -a actions
+  _pj_parse "$@" || return 1
+
+  if ! _exists fzf; then
+    echo "pj: pick needs fzf" >&2
+    return 1
+  fi
+  _pj_ensure_index || return 1
+  hit=$(cut -f1,2 "$PJ_INDEX_FILE" | _pj_pick "$query") || return 1
   _pj_go "${${hit#*$'\t'}%%$'\t'*}"
 }
 
@@ -381,7 +413,11 @@ _pj_cmd_new() {
     mkdir -p "$dest" && git -C "$dest" init -q || return 1
   fi
   echo "New sandbox project: ${dest/#$HOME/~}"
-  _pj_go "$dest"
+  _pj_go "$dest" || return 1
+  local target
+  [[ -n "$no_cd" ]] && target=" $name"
+  _pj_hint "pj keep${target}" "move it into ${PJ_ROOTS[1]/#$HOME/~} when it's worth keeping"
+  _pj_hint "pj drop${target}" "delete it when you're done"
 }
 
 # Jump to the sandbox or one of its projects
@@ -420,6 +456,10 @@ _pj_sandbox_ls() {
     dir="${entry#*$'\t'}"
     printf '%-35s %-6s %s\n' "${entry%%$'\t'*}" "$(_pj_age "$(_pj_mtime "$dir")")" "$(_pj_git_state "$dir")"
   done
+  echo
+  _pj_hint "pj sb <name>" "go to one"
+  _pj_hint "pj keep <name> / pj drop <name>" "keep or delete one"
+  _pj_hint "pj prune [days]" "delete everything idle for 30 days or N"
 }
 
 # Move a sandbox project into the first project root and index it
@@ -441,10 +481,14 @@ _pj_cmd_keep() {
   echo "Kept: ${src##*/} → ${dest/#$HOME/~}"
   [[ -n "$inside" || "$PWD" == "$src" ]] && builtin cd "${dest}${inside}"
 
+  local name="${dest##*/}"
   if git -C "$dest" remote get-url origin &>/dev/null; then
     _pj_cmd_index -q
+    name="$(_pj_name_of "$dest")"
+    _pj_hint "pj ${name:-${dest##*/}}" "get back to it later"
   else
-    echo "No origin remote yet. pj finds it once you add one: git remote add origin <url>"
+    echo "No origin remote yet, so pj can't find it by name."
+    _pj_hint "git -C ${dest/#$HOME/~} remote add origin <url>" "then: pj ${name}"
   fi
 }
 
@@ -560,28 +604,38 @@ _pj_cmd_link() {
   if git -C "$repo_path" worktree list 2>/dev/null | grep -q "\[$branch\]"; then
     worktree_branch="$(basename "$PWD")"
     echo "Branch '$branch' in use — creating '$worktree_branch' from 'origin/$branch'"
-    git -C "$repo_path" worktree add -b "$worktree_branch" "$dest" "origin/$branch" 2>&1 && \
-      echo "Worktree: $project → $dest (branch: $worktree_branch ← origin/$branch)"
-    return
+    git -C "$repo_path" worktree add -b "$worktree_branch" "$dest" "origin/$branch" 2>&1 || return 1
+    echo "Worktree: $project → $dest (branch: $worktree_branch ← origin/$branch)"
+  else
+    git -C "$repo_path" worktree add "$dest" "$branch" 2>&1 || return 1
+    echo "Worktree: $project → $dest (branch: $branch)"
   fi
 
-  git -C "$repo_path" worktree add "$dest" "$branch" 2>&1 && \
-    echo "Worktree: $project → $dest (branch: $branch)"
+  _pj_hint "cd $project" "work in it"
+  _pj_hint "pj unlink $project" "remove it when you're done (the branch stays)"
 }
 
 # Clone a repo into the first PJ_ROOTS dir, detect default branch, pull it, rebuild index
-# Usage: pj add git@host:org/repo.git or pj add https://host/org/repo.git
+# Usage: pj add <git-url> [-g]   (-g: cd into it afterwards)
 _pj_cmd_add() {
-  if [[ -z "$1" ]]; then
-    echo "Usage: pj add <git-url>" >&2
+  local src go arg
+  for arg in "$@"; do
+    case "$arg" in
+      -g|--go) go=1 ;;
+      -*)      echo "pj: unknown flag '$arg' for add" >&2; return 1 ;;
+      *)       src="$arg" ;;
+    esac
+  done
+  if [[ -z "$src" ]]; then
+    echo "Usage: pj add <git-url> [-g]" >&2
     return 1
   fi
 
-  local url="${1%.git}"
+  local url="${${src%/}%.git}"
   local name="${url##*/}"
 
   if [[ -z "$name" ]]; then
-    echo "Error: could not extract repo name from '$1'" >&2
+    echo "Error: could not extract repo name from '$src'" >&2
     return 1
   fi
 
@@ -592,7 +646,7 @@ _pj_cmd_add() {
     # Still pull the default branch
   else
     mkdir -p "${PJ_ROOTS[1]}"
-    git clone "$1" "$dest" || return 1
+    git clone "$src" "$dest" || return 1
   fi
 
   # Detect default branch and pull
@@ -610,6 +664,14 @@ _pj_cmd_add() {
   fi
 
   _pj_cmd_index
+  local short="$(_pj_name_of "$dest")"
+  : ${short:=$name}
+  if [[ -n "$go" ]]; then
+    builtin cd "$dest" || return 1
+  else
+    _pj_hint "pj $short" "go there"
+  fi
+  _pj_hint "pj link $short [branch]" "check it out as a worktree in the current folder"
 }
 
 # Remove a git worktree by directory name in current dir
@@ -631,10 +693,13 @@ _pj_cmd_unlink() {
   # Check if it's a git worktree
   if [[ -f "$target/.git" ]]; then
     # .git is a file in worktrees (points to main repo)
-    local main_repo=$(git -C "$target" rev-parse --git-common-dir 2>/dev/null)
+    local main_repo=$(git -C "$target" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
     if [[ -n "$main_repo" ]]; then
-      git -C "$target" worktree remove "$target" --force 2>&1 && \
-        echo "Removed worktree: $name"
+      local branch=$(git -C "$target" branch --show-current 2>/dev/null)
+      local project=$(_pj_name_of "${main_repo%/.git}")
+      git -C "$target" worktree remove "$target" --force 2>&1 || return 1
+      echo "Removed worktree: $name"
+      _pj_hint "pj link ${project:-$name}${branch:+ $branch}" "link it back"
       return
     fi
   fi
@@ -697,7 +762,7 @@ _pj_flags_complete() {
   local -a flags
   flags=(
     '-e:open in editor'
-    '-g:open in git GUI'
+    '-f:open in git GUI (Fork)'
     '-w:open remote in browser'
     '-n:do not cd'
   )
@@ -748,6 +813,7 @@ _pj() {
       'keep:move a sandbox project into ~/projects'
       'drop:delete a sandbox project'
       'prune:delete sandbox projects untouched for N days'
+      'pick:choose a project with fzf'
       'cd:jump to a project named like a subcommand'
       'help:show usage'
     )
@@ -757,7 +823,9 @@ _pj() {
   fi
 
   case "${words[2]}" in
-    add|ls|list|clean|help|prune) ;;
+    ls|list|clean|help|prune) ;;
+    add)    compadd -- -g ;;
+    pick)   _pj_flags_complete ;;
     new)    [[ "$PREFIX" == -* ]] && _pj_flags_complete ;;
     sb)
       if [[ "$PREFIX" == -* ]]; then _pj_flags_complete
