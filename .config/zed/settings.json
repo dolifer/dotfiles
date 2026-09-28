@@ -20,7 +20,7 @@
 
   },
   "project_panel": {
-    "dock": "right"
+    "dock": "left"
   },
   "outline_panel": {
     "dock": "right"
@@ -29,12 +29,12 @@
     "dock": "right"
   },
   "agent": {
-    "dock": "left",
+    "dock": "right",
     "favorite_models": [],
     "model_parameters": []
   },
   "git_panel": {
-    "dock": "right"
+    "dock": "left"
   },
   "format_on_save": "off",
   "ui_font_size": 16,
