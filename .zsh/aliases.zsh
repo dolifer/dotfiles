@@ -21,14 +21,16 @@ fi
 
 # --- Projects Index ---
 # Index file: ~/.cache/pj-index.tsv (tab-separated: short_name, full_path, remote_url)
-# Settings below can be overridden before this file is sourced.
+# Plain folders are indexed too, with an empty remote_url, so `pj github` reaches ~/projects/github.
+# Settings below can be overridden before this file is sourced
+# (install writes PJ_ROOTS and PJ_DEPTH to ~/.config/dotfiles/pj.zsh).
 PJ_INDEX_FILE="${HOME}/.cache/pj-index.tsv"
-(( ${+PJ_ROOTS} )) || typeset -ga PJ_ROOTS=("${HOME}/projects")  # dirs scanned for repos
-: ${PJ_DEPTH:=1}               # how many levels below each root to look for repos
+(( ${+PJ_ROOTS} )) || typeset -ga PJ_ROOTS=("${HOME}/projects")  # dirs scanned for repos and folders
+: ${PJ_DEPTH:=1}               # how many levels below each root to look for repos and folders
 : ${PJ_INDEX_TTL:=24}          # hours before the index is rebuilt automatically
 : ${PJ_EDITOR:=zed}            # pj <name> -e
 : ${PJ_GIT_GUI:=open -a Fork}  # pj <name> -f
-: ${PJ_SANDBOX:=${HOME}/projects/sandbox}  # pj new / sb / keep / drop / prune
+: ${PJ_SANDBOX:=${PJ_ROOTS[1]}/sandbox}  # pj new / sb / keep / drop / prune
 
 # The pj-* commands became pj subcommands; drop leftovers on `dot reload`
 unfunction pj-index pj-add pj-link pj-unlink pj-list pj-clean 2>/dev/null
@@ -36,7 +38,8 @@ zmodload zsh/datetime              # EPOCHSECONDS
 zmodload -F zsh/stat b:zstat
 
 # Print "name<TAB>path<TAB>remote" for every git repo with an origin under $1,
-# descending at most $2 levels. Does not descend into repos or the sandbox.
+# and "name<TAB>path<TAB>" for every plain folder, descending at most $2 levels.
+# Does not descend into repos or the sandbox; repos without an origin are skipped.
 _pj_scan() {
   local dir remote_url
   for dir in "$1"/*(N/); do
@@ -44,14 +47,15 @@ _pj_scan() {
     if [[ -e "${dir}/.git" ]]; then
       remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
       [[ -n "$remote_url" ]] && printf '%s\t%s\t%s\n' "${dir##*/}" "$dir" "$remote_url"
-    elif (( $2 > 1 )); then
-      _pj_scan "$dir" $(( $2 - 1 ))
+    else
+      printf '%s\t%s\t\n' "${dir##*/}" "$dir"
+      (( $2 > 1 )) && _pj_scan "$dir" $(( $2 - 1 ))
     fi
   done
 }
 
 # Rebuild the projects index by scanning PJ_ROOTS
-# Skips non-git dirs and repos without a remote.
+# Indexes repos with a remote and plain folders; skips repos without a remote.
 # Handles duplicate names by appending parent dir segments.
 # Usage: pj index [-q]
 _pj_cmd_index() {
@@ -94,7 +98,7 @@ _pj_cmd_index() {
 
   rm -f "$rawfile"
   mv -f "$tmpfile" "$PJ_INDEX_FILE"
-  [[ -z "$quiet" ]] && echo "Index rebuilt: $(wc -l < "$PJ_INDEX_FILE" | tr -d ' ') projects"
+  [[ -z "$quiet" ]] && awk -F'\t' '{ if ($3 == "") f++; else r++ } END { printf "Index rebuilt: %d projects, %d folders\n", r, f }' "$PJ_INDEX_FILE"
   return 0
 }
 
@@ -112,6 +116,7 @@ _pj_ensure_index() {
 
 # Print "name<TAB>path" for stdin entries (name<TAB>path[<TAB>...]) matching $1,
 # case-insensitive. Only the best tier is printed: exact, else prefix, else substring.
+# Repos and folders are equal here, so a tie between them opens the picker.
 _pj_candidates() {
   awk -F'\t' -v q="$1" '
     BEGIN { q = tolower(q) }
@@ -132,7 +137,7 @@ _pj_candidates() {
 _pj_pick() {
   fzf --height=40% --reverse --delimiter=$'\t' --with-nth=1 --query="$1" \
       --prompt='pj> ' --preview-window=right,60% \
-      --preview='git -C {2} log -1 --format="%C(yellow)%h%Creset %s%n%C(dim)%an, %ar%Creset" 2>/dev/null; echo; git -C {2} status -sb 2>/dev/null | head -20 || ls -A {2}'
+      --preview='if [ -e {2}/.git ]; then git -C {2} log -1 --format="%C(yellow)%h%Creset %s%n%C(dim)%an, %ar%Creset" 2>/dev/null; echo; git -C {2} status -sb 2>/dev/null | head -20; else ls -A {2}; fi'
 }
 
 # Choose one "name<TAB>path" from stdin entries matching $1.
@@ -252,9 +257,9 @@ _pj_help() {
   _pj_help_row() { printf "  ${C}%-28s${R} %s\n" "$1" "$2" }
 
   print -r -- "${B}Projects${R} ${D}${root}${R}"
-  _pj_help_row "pj <name> [flags]"       "jump to a project (exact, prefix or substring)"
+  _pj_help_row "pj <name> [flags]"       "jump to a project or folder (exact, prefix or substring)"
   _pj_help_row "pj pick"                 "choose a project with fzf"
-  _pj_help_row "pj ls"                   "list indexed projects"
+  _pj_help_row "pj ls"                   "list indexed projects and folders"
   _pj_help_row "pj add <git-url> [-g]"   "clone into ${root} (-g: cd into it)"
   _pj_help_row "pj index"                "rebuild the index (runs by itself daily)"
   _pj_help_row "pj clean"                "delete local branches whose remote is gone"
@@ -714,7 +719,7 @@ _pj_cmd_list() {
 
   printf '%-35s %-50s %s\n' "PROJECT" "PATH" "REMOTE"
   printf '%-35s %-50s %s\n' "-------" "----" "------"
-  awk -F'\t' -v home="$HOME" '{ if (index($2, home) == 1) $2 = "~" substr($2, length(home) + 1); gsub(/^git@[^:]+:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "—") }' "$PJ_INDEX_FILE"
+  awk -F'\t' -v home="$HOME" '{ if (index($2, home) == 1) $2 = "~" substr($2, length(home) + 1); gsub(/^git@[^:]+:/, "", $3); printf "%-35s %-50s %s\n", $1, $2, ($3 ? $3 : "(folder)") }' "$PJ_INDEX_FILE"
 }
 
 # --- Cleanup stale branches across all projects ---

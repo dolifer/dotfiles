@@ -137,6 +137,9 @@ zstyle ':fzf-tab:complete:(ls|eza|cat|bat|less|zed|vim|nvim|code|open|rm|cp|mv):
 [[ -f ~/.config/dotfiles/profile ]] && DOTFILES_PROFILE=${"$(<~/.config/dotfiles/profile)"//[[:space:]]/}
 [[ -n $DOTFILES_PROFILE && -f ~/.zsh/$DOTFILES_PROFILE.zsh ]] && source ~/.zsh/$DOTFILES_PROFILE.zsh
 
+# --- pj settings asked by install (projects folder, depth) ---
+[[ -f ~/.config/dotfiles/pj.zsh ]] && source ~/.config/dotfiles/pj.zsh
+
 # --- Machine-local overrides (untracked: secrets, tokens; wins over the profile file) ---
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 

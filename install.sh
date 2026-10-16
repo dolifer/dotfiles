@@ -24,7 +24,7 @@ info()    { echo -e "  ${CYAN}💡${RESET} ${*}"; }
 indent()  { sed 's/^/  /' ; }
 
 # --- Progress ---
-TOTAL_STEPS=6
+TOTAL_STEPS=7
 CURRENT_STEP=0
 RESULTS=()
 START_TIME=$(date +%s)
@@ -273,6 +273,68 @@ sync_configs() {
   track "🔗" "Configs — synced"
 }
 
+# --- Project jumper (pj): asked once, kept in ~/.config/dotfiles/pj.zsh ---
+PJ_FILE="$HOME/.config/dotfiles/pj.zsh"
+
+# Prompt with a default; reads the terminal so it also works under curl | bash
+ask() {
+  local prompt="$1" default="$2" answer=""
+  if [[ -r /dev/tty ]]; then
+    read -r -p "  ${prompt} [${default}]: " answer < /dev/tty || answer=""
+  fi
+  echo "${answer:-$default}"
+}
+
+# Deepest level below $1 that holds a git repo (1-3, skipping the sandbox and
+# folders inside repos); 1 if there are none yet
+detect_pj_depth() {
+  local root="$1" depth=1 repo rel levels
+  [[ -d "$root" ]] || { echo 1; return; }
+  while IFS= read -r repo; do
+    rel="${repo#"$root"/}"
+    levels=$(( $(tr -cd '/' <<< "$rel" | wc -c) + 1 ))
+    (( levels > depth )) && depth=$levels
+  done < <(find "$root" -mindepth 1 -maxdepth 3 -path "$root/sandbox" -prune -o \
+             -type d -exec test -e {}/.git \; -print -prune 2>/dev/null)
+  echo "$depth"
+}
+
+setup_pj() {
+  step "📁 Projects (pj)"
+
+  if [[ -f "$PJ_FILE" ]]; then
+    ok "Settings kept ${DIM}(~/.config/dotfiles/pj.zsh; delete it to be asked again)${RESET}"
+    track "📁" "pj — settings kept"
+    return
+  fi
+
+  local root depth
+  root=$(ask "Projects folder" "~/projects")
+  [[ "$root" == "~" || "$root" == "~/"* ]] && root="$HOME${root#\~}"
+  root="${root%/}"
+  depth=$(ask "How many folder levels hold repos (2 for ~/projects/github/<repo>)" "$(detect_pj_depth "$root")")
+  if [[ ! "$depth" =~ ^[1-9]$ ]]; then
+    warn "'${depth}' is not a level from 1 to 9, using 1"
+    depth=1
+  fi
+
+  local shown="$root" written="$root"
+  if [[ "$root" == "$HOME"/* ]]; then
+    shown="~${root#"$HOME"}"
+    written="\$HOME${root#"$HOME"}"
+  fi
+
+  mkdir -p "$root" "$(dirname "$PJ_FILE")"
+  cat > "$PJ_FILE" <<EOF
+# pj settings written by install.sh. Delete this file and re-run install to be asked again;
+# ~/.zshrc.local is sourced after it and can still override anything here.
+PJ_ROOTS=("${written}")
+PJ_DEPTH=${depth}
+EOF
+  ok "Projects in ${shown}, ${depth} level(s) deep ${DIM}(~/.config/dotfiles/pj.zsh)${RESET}"
+  track "📁" "pj — ${shown}, depth ${depth}"
+}
+
 # --- macOS defaults ---
 setup_macos() {
   step "🍎 macOS defaults"
@@ -348,6 +410,7 @@ main() {
   install_software
   install_zinit
   sync_configs
+  setup_pj
   setup_macos
   setup_gitlocal
 
