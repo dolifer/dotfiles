@@ -22,14 +22,15 @@ fi
 # --- Projects Index ---
 # Index file: ~/.cache/pj-index.tsv (tab-separated: short_name, full_path, remote_url)
 # Plain folders are indexed too, with an empty remote_url, so `pj github` reaches ~/projects/github.
-# Settings below can be overridden before this file is sourced.
+# Settings below can be overridden before this file is sourced
+# (install writes PJ_ROOTS and PJ_DEPTH to ~/.config/dotfiles/pj.zsh).
 PJ_INDEX_FILE="${HOME}/.cache/pj-index.tsv"
 (( ${+PJ_ROOTS} )) || typeset -ga PJ_ROOTS=("${HOME}/projects")  # dirs scanned for repos and folders
 : ${PJ_DEPTH:=1}               # how many levels below each root to look for repos and folders
 : ${PJ_INDEX_TTL:=24}          # hours before the index is rebuilt automatically
 : ${PJ_EDITOR:=zed}            # pj <name> -e
 : ${PJ_GIT_GUI:=open -a Fork}  # pj <name> -f
-: ${PJ_SANDBOX:=${HOME}/projects/sandbox}  # pj new / sb / keep / drop / prune
+: ${PJ_SANDBOX:=${PJ_ROOTS[1]}/sandbox}  # pj new / sb / keep / drop / prune
 
 # The pj-* commands became pj subcommands; drop leftovers on `dot reload`
 unfunction pj-index pj-add pj-link pj-unlink pj-list pj-clean 2>/dev/null

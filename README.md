@@ -41,7 +41,7 @@ pj drop            # delete it instead (asks first)
 pj prune 30        # delete sandbox projects untouched for 30 days (asks first)
 ```
 
-The index rebuilds itself when it is a day old or a name is not found. An exact name always wins; when a repo and a folder match equally well (`pj git` with a `github` folder and a `gitops` repo), the fzf picker asks which one. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_SANDBOX`, `PJ_EDITOR` or `PJ_GIT_GUI` in `~/.zshrc.local` to change the defaults. Run `zsh tests/pj.zsh` after changing `pj`.
+The index rebuilds itself when it is a day old or a name is not found. An exact name always wins; when a repo and a folder match equally well (`pj git` with a `github` folder and a `gitops` repo), the fzf picker asks which one. Install asks once for your projects folder and how many levels deep the repos sit (it suggests the depth it finds, e.g. 2 for `~/projects/github/<repo>`) and saves the answers to `~/.config/dotfiles/pj.zsh`; delete that file and run install again to be asked again. Set `PJ_ROOTS`, `PJ_DEPTH`, `PJ_SANDBOX`, `PJ_EDITOR` or `PJ_GIT_GUI` in `~/.zshrc.local` to override anything; the sandbox defaults to `sandbox` inside the projects folder. Run `zsh tests/pj.zsh` after changing `pj`.
 
 ## Quick bootstrap (fresh machine)
 
