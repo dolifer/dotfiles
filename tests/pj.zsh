@@ -62,6 +62,8 @@ mkdir -p "$P/notes" "$P/sandbox/spike"
 
 PJ_DEPTH=2
 source "$REPO/.zsh/aliases.zsh" 2>/dev/null
+# Hide fzf so ties print the choices instead of opening an interactive picker
+_exists() { [[ "$1" != fzf ]] && command -v "$1" >/dev/null 2>&1 }
 
 pj index -q
 index=$(<"$PJ_INDEX_FILE")
@@ -89,10 +91,18 @@ expect_cd NGQL   "$P/github/ngql"     # case-insensitive
 expect_cd note   "$P/notes"           # folder, prefix
 expect_cd ngq    "$P/github/ngql"     # repo, prefix
 expect_cd gql    "$P/github/ngql"     # repo, substring
-expect_cd git    "$P/github/gitops"   # prefix tie: repo wins over folder
 expect_cd work   "$P/work"            # folder that only holds repos
 expect_cd work--dot "$P/work/dotfiles"
 expect_miss nope
+
+# A repo and a folder that match equally well: pj asks instead of picking
+builtin cd "$TMP"
+out=$(pj git 2>&1); rc=$?
+if (( rc != 0 )) && [[ "$PWD" == "$TMP" && "$out" == *"matches several"* && "$out" == *github* && "$out" == *gitops* ]]; then
+  ok "pj git asks between folder github and repo gitops"
+else
+  fail "pj git asks between folder github and repo gitops" "$out"
+fi
 expect_miss local-only
 
 # -n stays put

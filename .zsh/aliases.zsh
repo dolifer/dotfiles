@@ -113,28 +113,22 @@ _pj_ensure_index() {
   (( ${#fresh} )) || _pj_cmd_index -q
 }
 
-# Print "name<TAB>path" for stdin entries (name<TAB>path[<TAB>remote]) matching $1,
+# Print "name<TAB>path" for stdin entries (name<TAB>path[<TAB>...]) matching $1,
 # case-insensitive. Only the best tier is printed: exact, else prefix, else substring.
-# Within a tier, repos (with a remote) win over plain folders.
+# Repos and folders are equal here, so a tie between them opens the picker.
 _pj_candidates() {
   awk -F'\t' -v q="$1" '
     BEGIN { q = tolower(q) }
     {
-      n = tolower($1)
-      if (n == q)                t = 1
-      else if (index(n, q) == 1) t = 2
-      else if (index(n, q))      t = 3
-      else next
-      k = t ($3 == "" ? "f" : "r")
-      hits[k, ++count[k]] = $1 "\t" $2
+      n = tolower($1); line = $1 "\t" $2
+      if (n == q)              exact[++e] = line
+      else if (index(n, q) == 1) prefix[++p] = line
+      else if (index(n, q))      mid[++m] = line
     }
     END {
-      for (t = 1; t <= 3; t++) {
-        k = t "r"; if (!count[k]) k = t "f"
-        if (!count[k]) continue
-        for (i = 1; i <= count[k]; i++) print hits[k, i]
-        exit
-      }
+      if (e)      for (i = 1; i <= e; i++) print exact[i]
+      else if (p) for (i = 1; i <= p; i++) print prefix[i]
+      else        for (i = 1; i <= m; i++) print mid[i]
     }'
 }
 
